@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/voro-mcp-server-usage-example-ezgif.com-video-to-gif-converter.gif" alt="Võro MCP server usage example" width="100%" />
+  <img src="assets/chatgpt-using-mcp-example.gif" alt="ChatGPT using the Võro MCP server" width="100%" />
 </p>
 
 An MCP server for working with the Võro language: local dictionary and corpus
@@ -207,6 +207,10 @@ This builds the server in Modal's cloud and prints a hosted HTTPS endpoint like:
 ```text
 https://<workspace>--vro-mcp-serve.modal.run/<secret>/mcp
 ```
+
+<p align="center">
+  <img src="assets/modal-setup-claude-code-usage-example.gif" alt="Modal setup and Claude Code usage example" width="100%" />
+</p>
 
 Paste that URL into any MCP client (Claude Code, Codex, Claude web, ChatGPT) and
 you can reach the tools from anywhere, no local install needed. The server wakes
