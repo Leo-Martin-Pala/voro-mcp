@@ -108,7 +108,7 @@ elif [[ -z "$MCP_PATH_VALUE" || "$NEW_SECRET" == "1" ]]; then
   MCP_PATH_VALUE="$(python3 -c "import secrets; print('/' + secrets.token_urlsafe(24) + '/mcp')")"
   {
     if [[ -r "$ENV_FILE" ]]; then
-      grep -v '^MCP_PATH=' "$ENV_FILE"
+      grep -v '^MCP_PATH=' "$ENV_FILE" || true
     fi
     printf 'MCP_PATH=%s\n' "$MCP_PATH_VALUE"
   } > "$ENV_FILE.tmp"
