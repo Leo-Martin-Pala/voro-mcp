@@ -1,4 +1,20 @@
-# Võro MCP Server
+<h1 align="center">Võro MCP Server</h1>
+
+<p align="center">
+  Give Claude, Codex, ChatGPT, and other MCP clients real tools for working with the Võro language.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/MCP-server-blue" />
+  <img src="https://img.shields.io/badge/Python-3.11+-blue" />
+  <img src="https://img.shields.io/badge/License-MIT-green" />
+  <img src="https://img.shields.io/badge/Data-CC--BY--SA--4.0-orange" />
+  <img src="https://img.shields.io/badge/GiellaLT-GPL--3.0-orange" />
+</p>
+
+<p align="center">
+  <img src="assets/voro-mcp-server-usage-example-ezgif.com-video-to-gif-converter.gif" alt="Võro MCP server usage example" width="100%" />
+</p>
 
 An MCP server for working with the Võro language: local dictionary and corpus
 lookup, GiellaLT-backed analysis/spellcheck/grammar tools, and Neurotõlge
@@ -14,6 +30,8 @@ It can be useful for tasks such as Võro translation, checking and improving gen
 
 ## Install
 
+### Quick setup
+
 On Debian/Ubuntu, one command does the whole setup.
 
 ```sh
@@ -26,9 +44,10 @@ repo first if your system can't already find `divvun-gramcheck`), downloads the
 SQLite datasets and the prebuilt Giella models, creates `.venv`, and installs
 the package. Smoke-test it with `make test`.
 
-### Manual setup
+<details>
+<summary><strong>Manual setup</strong> (other platforms, or to see the pieces)</summary>
 
-For other platforms, or to see the pieces:
+<br />
 
 1. **System binaries** the Giella tools shell out to: `hfst-optimized-lookup`,
    `hfst-ospell`, `cg3`, `divvun-checker`. On Debian/Ubuntu they come from the
@@ -59,6 +78,8 @@ For other platforms, or to see the pieces:
    ```sh
    vro-mcp-check
    ```
+
+</details>
 
 ## Tools
 
@@ -104,6 +125,11 @@ to point at a different release.
 All path defaults are repo-local; override any with environment variables or a
 local `.env` where the deploy script supports it.
 
+<details>
+<summary><strong>Environment variables</strong></summary>
+
+<br />
+
 | Variable | Default | Description |
 | --- | --- | --- |
 | `VRO_DICTIONARY_DB` | `./data/vro_dictionary.sqlite` | Dictionary SQLite path used by `lookup_word` and correction suggestions. |
@@ -134,12 +160,12 @@ local `.env` where the deploy script supports it.
 | `MODAL_VOLUME_NAME` | `vro-data` | Modal Volume name for SQLite data and Giella artifacts. |
 | `MODAL_SECRET_NAME` | `vro-mcp-secret` | Modal secret name storing `MCP_PATH`. |
 
-## Point a client at it
+</details>
 
-You don't run the server yourself. The MCP client launches the `vro-mcp-server`
-binary and talks to it over stdio, so all a client needs is the binary's
-absolute path. Run `make local-url` to print that path and ready-to-paste config
-for Claude Code and Codex.
+## Connect a client
+
+All a client needs is the binary's absolute path. Run `make local-url` to print
+that path and ready-to-paste config for Claude Code and Codex.
 
 Claude Code:
 
@@ -168,8 +194,27 @@ Generic JSON MCP client configuration:
 
 ## Deployment
 
-To host the server in the cloud so Claude or ChatGPT (the web apps) can reach it,
-see [DEPLOY.md](DEPLOY.md).
+The local setup above runs the server on your own machine. To use it from
+anywhere — including the Claude and ChatGPT web apps — deploy it to
+[Modal](https://modal.com) instead.
+
+```sh
+make deploy
+```
+
+This builds the server in Modal's cloud and prints a hosted HTTPS endpoint like:
+
+```text
+https://<workspace>--vro-mcp-serve.modal.run/<secret>/mcp
+```
+
+Paste that URL into any MCP client (Claude Code, Codex, Claude web, ChatGPT) and
+you can reach the tools from anywhere, no local install needed. The server wakes
+on demand and sits idle for free between requests. The URL embeds a random secret
+path that acts as its password, so keep it private.
+
+See [DEPLOY.md](DEPLOY.md) for prerequisites, connecting each client, and the
+full set of deploy commands.
 
 ## License
 
