@@ -10,7 +10,7 @@ DATA_ASSET := vro-data.tar.xz
 GIELLA_TAG ?= giella-v1
 GIELLA_ASSET := giella-share.tar.xz
 
-.PHONY: help install data giella giella-build setup test run local-url \
+.PHONY: help install data giella giella-build setup test local-url \
         package-data release-data package-giella release-giella deploy \
         deploy-new-secret deploy-local-secret deploy-release deploy-release-force \
         deploy-local deploy-local-force deploy-none undeploy
@@ -38,9 +38,6 @@ setup: ## One-command local setup (Debian/Ubuntu)
 
 test: ## Run the smoke tests
 	python -m unittest discover -s tests
-
-run: ## Run the MCP server (blocks on stdio; clients normally launch it themselves)
-	.venv/bin/vro-mcp-server
 
 local-url: ## Print local MCP path plus Claude, Codex, and JSON client config
 	@bin="$(CURDIR)/.venv/bin/vro-mcp-server"; \

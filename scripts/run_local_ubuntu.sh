@@ -66,11 +66,37 @@ python3 -m venv "$ROOT/.venv"
 
 "$ROOT/.venv/bin/vro-mcp-check" || true
 
+BIN="$ROOT/.venv/bin/vro-mcp-server"
+
 cat <<EOF
 
-Setup complete. Start the server with:
-  make run        (or: .venv/bin/vro-mcp-server)
+Setup complete.
 
-It speaks MCP over stdio and waits for a client, so running it in a plain
-terminal just blocks, so point your MCP client at it instead.
+This is an MCP server: it speaks the Model Context Protocol over stdio and is
+meant to be launched by an MCP client (Claude Code, Codex, etc.), not run by
+hand. Running the binary in a plain terminal just blocks while it waits for a
+client to connect — that is expected, not a hang.
+
+Instead, register the server with your client using the local binary below.
+
+Local MCP server binary:
+  $BIN
+
+Claude Code:
+  claude mcp add vro -- $BIN
+
+Codex CLI:
+  codex mcp add vro -- $BIN
+
+Generic JSON MCP client config:
+  {
+    "mcpServers": {
+      "vro": {
+        "command": "$BIN",
+        "cwd": "$ROOT"
+      }
+    }
+  }
+
+Re-print this any time with: make local-url
 EOF
