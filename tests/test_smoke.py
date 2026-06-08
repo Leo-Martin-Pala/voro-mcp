@@ -10,12 +10,34 @@ from vro_mcp.server import _mcp_path_from_env, _read_resource
 from vro_mcp.tools import VroTools
 
 
+DATA_HINT = "run `make data` (or `make setup`) to download the datasets"
+GIELLA_HINT = "run `make giella` (or `make setup`) to install the Giella tools"
+
+
 class SmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.tools = VroTools(load_settings())
+        status = cls.tools.check_setup()
+        cls.db_available = {
+            name: bool(info.get("available")) for name, info in status["databases"].items()
+        }
+        cls.giella_available = {
+            key: bool(info.get("available")) for key, info in status["giella"].items()
+        }
+
+    def _require_db(self, *names: str) -> None:
+        missing = [name for name in names if not self.db_available.get(name)]
+        if missing:
+            self.skipTest(f"{', '.join(missing)} database not installed — {DATA_HINT}")
+
+    def _require_giella(self, *keys: str) -> None:
+        missing = [key for key in keys if not self.giella_available.get(key)]
+        if missing:
+            self.skipTest(f"Giella {', '.join(missing)} not installed — {GIELLA_HINT}")
 
     def test_lookup_word_runs(self) -> None:
+        self._require_db("dictionary")
         out = self.tools.lookup_word("world", limit=1)
         results = out["results"]["world"]
         self.assertTrue(results)
@@ -23,12 +45,14 @@ class SmokeTests(unittest.TestCase):
         self.assertIn("direction_description", results[0])
 
     def test_lookup_word_batched_is_keyed(self) -> None:
+        self._require_db("dictionary")
         out = self.tools.lookup_word(["world", "water"])
         self.assertEqual(set(out["results"]), {"world", "water"})
         self.assertEqual(out["per_query_limit"], 3)  # batched default
         self.assertTrue(out["results"]["world"])
 
     def test_find_usage_examples_runs(self) -> None:
+        self._require_db("corpus")
         out = self.tools.find_usage_examples("naasõ", limit=1)
         results = out["results"]["naasõ"]
         self.assertTrue(results)
@@ -37,18 +61,21 @@ class SmokeTests(unittest.TestCase):
         self.assertNotIn("document_title", results[0])
 
     def test_word_exists_in_bag_runs(self) -> None:
+        self._require_db("word_bag")
         out = self.tools.word_exists_in_bag("Miä", include_sources=False)
         result = out["results"]["Miä"]
         self.assertTrue(result["exists"])
         self.assertEqual(result["normalized_word"], "miä")
 
     def test_word_exists_in_bag_batched_is_keyed(self) -> None:
+        self._require_db("word_bag")
         out = self.tools.word_exists_in_bag(["Miä", "xyzzyvrotest"], include_sources=False)
         self.assertEqual(out["checked"], 2)
         self.assertTrue(out["results"]["Miä"]["exists"])
         self.assertFalse(out["results"]["xyzzyvrotest"]["exists"])
 
     def test_find_unknown_words_runs(self) -> None:
+        self._require_db("word_bag")
         result = self.tools.find_unknown_words("Miä olõ hüä xyzzyvrotest", limit=10)
         unknown = {item["normalized_word"] for item in result["unknown_words"]}
         self.assertIn("xyzzyvrotest", unknown)
@@ -130,6 +157,7 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(out["flagged_phrases"], [])
 
     def test_suggest_correction_returns_valid_form_as_already_valid(self) -> None:
+        self._require_giella("analyzer")
         result = self.tools.suggest_correction("köüdet")
         self.assertEqual(result["status"], "already_valid")
         self.assertEqual(result["best"]["form"], "köüdet")
@@ -143,15 +171,18 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(any(line.endswith("\t0") for line in result["best"]["analyses"]))
 
     def test_spellcheck_tokenizes_sentence_input(self) -> None:
+        self._require_giella("speller")
         result = self.tools.spellcheck_vro("Miä olõ hüä tekstt.")
         self.assertIn('"tekstt" is NOT in the lexicon', result.get("output", ""))
         self.assertNotIn('"miä" is NOT in the lexicon', result.get("output", ""))
 
     def test_generate_forms_runs_with_giella_tags(self) -> None:
+        self._require_giella("generator")
         result = self.tools.generate_forms("uma", tags="A+Sg+Ill")
         self.assertIn("umma", result.get("output", ""))
 
     def test_lookup_word_accepts_user_facing_direction_alias(self) -> None:
+        self._require_db("dictionary")
         out = self.tools.lookup_word("vesi", direction="vro-en", limit=1)
         self.assertTrue(out["results"]["vesi"])
 
@@ -209,6 +240,7 @@ class SmokeTests(unittest.TestCase):
         self.assertIn("setup_hint", result)
 
     def test_check_setup_reports_databases(self) -> None:
+        self._require_db("dictionary")
         result = self.tools.check_setup()
         self.assertIn("databases", result)
         self.assertTrue(result["databases"]["dictionary"]["available"])

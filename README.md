@@ -44,6 +44,11 @@ repo first if your system can't already find `divvun-gramcheck`), downloads the
 SQLite datasets and the prebuilt Giella models, creates `.venv`, and installs
 the package. Smoke-test it with `make test`.
 
+`make test` runs straight from the checkout (no install needed). Tests that need
+the SQLite datasets or the Giella tools **skip with a hint** when those aren't
+present, so a bare clone still reports green — run `make data` and `make giella`
+(or the full `make setup`) to actually exercise them.
+
 <details>
 <summary><strong>Manual setup</strong> (other platforms, or to see the pieces)</summary>
 
