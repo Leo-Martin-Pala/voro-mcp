@@ -37,7 +37,7 @@ setup: ## One-command local setup (Debian/Ubuntu)
 	scripts/run_local_ubuntu.sh
 
 test: ## Run the smoke tests
-	python -m unittest discover -s tests
+	PYTHONPATH=src python -m unittest discover -s tests
 
 local-url: ## Print local MCP path plus Claude, Codex, and JSON client config
 	@bin="$(CURDIR)/.venv/bin/vro-mcp-server"; \
