@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ARCHIVE="${VRO_GRAMMAR_MODEL:-$REPO_ROOT/data/giella-share/voikko/4/vro.zcheck}"
+
+if [[ "${1:-}" == "--check" ]]; then
+  command -v divvun-checker >/dev/null || { echo "missing divvun-checker; rebuild lang-vro with --enable-grammarchecker after installing it" >&2; exit 1; }
+  test -r "$ARCHIVE" || { echo "missing grammar archive: $ARCHIVE" >&2; exit 1; }
+  exit 0
+fi
+
+if ! command -v divvun-checker >/dev/null; then
+  echo "grammar_check_vro is not available: install divvun-checker and rebuild lang-vro with --enable-grammarchecker." >&2
+  exit 127
+fi
+
+exec divvun-checker -a "$ARCHIVE"

@@ -1,0 +1,198 @@
+{
+  "ruleset_id": "voro_estonian_leakage_v0_1",
+  "purpose": "Flag likely Standard Estonian inflectional leakage in intended Võro text.",
+  "normalization": {
+    "lowercase": true,
+    "preserve_chars": ["q", "õ", "ä", "ö", "ü", "ś", "ń", "ľ", "ŕ", "ḿ", "ť", "´", "'"],
+    "token_regex": "[^\\W\\d_][^\\W\\d_'´-]*['´-]*[^\\W\\d_]*"
+  },
+  "rules": [
+    {
+      "id": "EST_ACTIVE_PAST_NUD",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}nud\\b",
+      "message": "Looks like Standard Estonian active past participle -nud. Võro expects -nU(q), practical -nu/-nü, e.g. olnu/olnuq, saanu/saanuq.",
+      "hint": "Rewrite the verb as a Võro past participle, not Estonian -nud."
+    },
+    {
+      "id": "EST_PASSIVE_PAST_TUD_DUD",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}(tud|dud)\\b",
+      "message": "Looks like Standard Estonian passive past participle -tud/-dud. Võro uses passive past sg -t/-d and plural -tU(q)/-dU(q).",
+      "hint": "Check whether the Võro form should end in -t/-d, -tu/-tü, or -du/-dü."
+    },
+    {
+      "id": "EST_NEG_PAST_EI_NUD",
+      "severity": "error",
+      "scope": "window",
+      "regex": "(?iu)\\bei\\s+[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]+(nud|tud|dud)\\b",
+      "message": "Looks like Estonian past negation: ei + -nud/-tud. Võro past negation normally uses es, e.g. es tiiq, or post-negation -Vs.",
+      "hint": "Use Võro past negation, not Estonian ei teinud / ei olnud."
+    },
+    {
+      "id": "EST_3SG_PRESENT_B",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}b\\b",
+      "message": "Looks like Standard Estonian 3rd singular present -b. Võro 3sg present is normally endingless or -s-final, not -b.",
+      "hint": "Check whether this should be a Võro 3sg form such as and, tulõ, kirotas, or eläs."
+    },
+    {
+      "id": "EST_3PL_PRESENT_VAD",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}vad\\b",
+      "message": "Looks like Standard Estonian 3rd plural present -vad. Võro 3pl present is -vAq or -sEq, practical -vaq/-väq or -sõq/-seq.",
+      "hint": "Use a Võro 3pl ending such as -vaq/-väq or -sõq/-seq."
+    },
+    {
+      "id": "EST_IMPERSONAL_TAKSE_DAKSE",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}(takse|dakse)\\b",
+      "message": "Looks like Standard Estonian impersonal present -takse/-dakse. Võro impersonal present is normally -tAs/-dAs.",
+      "hint": "Rewrite as a Võro passive/impersonal form."
+    },
+    {
+      "id": "EST_SIMPLE_PAST_PERSONAL",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}(sin|sime|site)\\b",
+      "message": "Looks like Standard Estonian simple past personal ending -sin/-sime/-site.",
+      "hint": "Use the Võro simple past paradigm instead."
+    },
+    {
+      "id": "EST_CONDITIONAL_PERSONAL",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}(ksin|ksime|ksite)\\b",
+      "message": "Looks like Standard Estonian conditional person ending -ksin/-ksime/-ksite. Võro conditional is normally -si/-ssi or nU-type.",
+      "hint": "Rewrite with Võro conditional morphology."
+    },
+    {
+      "id": "EST_ILLATIVE_SSE",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}sse\\b",
+      "message": "Looks like Standard Estonian illative -sse. Võro standard illative uses -he, -tE, -dE, -Ø and other type-dependent forms.",
+      "hint": "Check the Võro illative form."
+    },
+    {
+      "id": "EST_PL_ILLATIVE_DESSE_TESSE",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}(desse|tesse)\\b",
+      "message": "Looks like Standard Estonian plural illative -desse/-tesse.",
+      "hint": "Use Võro plural illative, often with -he or type-specific plural stem."
+    },
+    {
+      "id": "EST_PL_PARTITIVE_SID",
+      "severity": "error",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}sid\\b",
+      "message": "Looks like Standard Estonian plural partitive or past-person ending -sid. Võro plural partitive normally uses -sit/-it/-id, vowel plural, or isi/idsi-type forms.",
+      "hint": "Check whether this is an Estonian plural or past form."
+    },
+    {
+      "id": "EST_DA_TA_INF_NO_Q",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}(da|ta)\\b",
+      "message": "Looks like an Estonian da-/ta-infinitive without final q. Võro infinitives normally keep q in practical spelling: -daq/-taq/-aq/-q.",
+      "hint": "If this is an infinitive, add/restore the Võro infinitive form."
+    },
+    {
+      "id": "EST_MAS_FORM",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}mas\\b",
+      "message": "Looks like Estonian mas-form. Võro supine inessive is -mAn, e.g. -man/-män.",
+      "hint": "Check whether this should be Võro -man/-män."
+    },
+    {
+      "id": "EST_MAKS_FORM",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}maks\\b",
+      "message": "Looks like Estonian maks-form. Võro does not use Estonian -maks as the ordinary corresponding form.",
+      "hint": "Check whether the construction should be rewritten in Võro.",
+      "allowlist": ["maks"]
+    },
+    {
+      "id": "EST_MATA_FORM",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}mata\\b",
+      "message": "Looks like Estonian mata-form. Võro supine abessive is -mAldA, e.g. -malda/-mäldä.",
+      "hint": "Check whether this should be Võro -malda/-mäldä."
+    },
+    {
+      "id": "EST_DES_TES_GERUND",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}(des|tes)\\b",
+      "message": "Looks like Estonian des-/tes-gerund. Võro gerundive uses endings like -dEn/-tEn/-n, e.g. kõnõldõn, visatõn.",
+      "hint": "Check whether this should be a Võro gerundive."
+    },
+    {
+      "id": "EST_NOM_PL_D",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}[aeiouõäöü]d\\b",
+      "message": "May be Estonian nominative plural -d. Võro nominative plural is normally -q.",
+      "hint": "Only flag strongly if the context clearly needs nominative plural."
+    },
+    {
+      "id": "EST_TRANSLATIVE_KS",
+      "severity": "warning",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}ks\\b",
+      "message": "May be Estonian translative -ks. Võro translative is normally -s.",
+      "hint": "Only flag if this is clearly a noun/adjective case form."
+    },
+    {
+      "id": "EST_ESSIVE_NA",
+      "severity": "info",
+      "scope": "token",
+      "regex": "(?iu)\\b[^\\W\\d_]['´\\-\\wõäöüšžśńľŕḿť]{2,}na\\b",
+      "message": "May be Estonian essive -na. Traditional Võro does not productively use Estonian-style -nA essive.",
+      "hint": "Use only as a soft reminder; many ordinary words can end in -na."
+    }
+  ],
+  "do_not_flag_suffixes": [
+    {
+      "suffix": "ga",
+      "reason": "Estonian comitative -ga overlaps with current practical Võro comitative -ga."
+    },
+    {
+      "suffix": "ni",
+      "reason": "Estonian terminative -ni overlaps with practical Võro terminative -ni."
+    },
+    {
+      "suffix": "st",
+      "reason": "Võro elative is also -st."
+    },
+    {
+      "suffix": "l",
+      "reason": "Võro adessive is also -l."
+    },
+    {
+      "suffix": "lt",
+      "reason": "Võro ablative is also -lt."
+    },
+    {
+      "suffix": "ma",
+      "reason": "Both languages have ma/supine-like forms."
+    },
+    {
+      "suffix": "mast",
+      "reason": "Võro supine elative can be -mAst, e.g. -mast/-mäst."
+    },
+    {
+      "suffix": "tav/dav",
+      "reason": "Võro has present passive participle -tAv/-dAv, overlapping with Estonian."
+    }
+  ]
+}

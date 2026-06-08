@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+MODEL="${VRO_ANALYZER_MODEL:-$REPO_ROOT/data/giella-share/giella/vro/analyser-gt-desc.hfstol}"
+
+if [[ "${1:-}" == "--check" ]]; then
+  command -v hfst-optimized-lookup >/dev/null || { echo "missing hfst-optimized-lookup" >&2; exit 1; }
+  test -r "$MODEL" || { echo "missing analyzer model: $MODEL" >&2; exit 1; }
+  exit 0
+fi
+
+exec hfst-optimized-lookup -q "$MODEL"

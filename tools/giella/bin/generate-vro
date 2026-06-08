@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+MODEL="${VRO_GENERATOR_MODEL:-$REPO_ROOT/data/giella-share/giella/vro/generator-gt-norm.hfstol}"
+
+if [[ "${1:-}" == "--check" ]]; then
+  command -v hfst-optimized-lookup >/dev/null || { echo "missing hfst-optimized-lookup" >&2; exit 1; }
+  test -r "$MODEL" || { echo "missing generator model: $MODEL" >&2; exit 1; }
+  exit 0
+fi
+
+# Accept either a full analysis string or "lemma<TAB>tags".
+while IFS= read -r line; do
+  if [[ "$line" == *$'\t'* ]]; then
+    lemma="${line%%$'\t'*}"
+    tags="${line#*$'\t'}"
+    printf '%s+%s\n' "$lemma" "$tags"
+  else
+    printf '%s\n' "$line"
+  fi
+done | hfst-optimized-lookup -q "$MODEL"

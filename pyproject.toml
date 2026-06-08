@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vro-mcp-server"
+version = "0.1.0"
+description = "Minimal MCP server for Võro dictionary, corpus, and language tooling."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "mcp>=1.0.0",
+]
+
+[project.scripts]
+vro-mcp-server = "vro_mcp.server:main"
+vro-mcp-check = "vro_mcp.check_setup:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vro_mcp = ["rules/*.json"]

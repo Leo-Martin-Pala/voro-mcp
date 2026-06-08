@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+MODEL="${VRO_SPELLER_MODEL:-$REPO_ROOT/data/giella-share/voikko/3/vro.zhfst}"
+
+if [[ "${1:-}" == "--check" ]]; then
+  command -v hfst-ospell >/dev/null || { echo "missing hfst-ospell" >&2; exit 1; }
+  test -r "$MODEL" || { echo "missing speller model: $MODEL" >&2; exit 1; }
+  exit 0
+fi
+
+perl -CSDA -ne 'while (/[\p{L}\p{M}]+(?:[-'\''][\p{L}\p{M}]+)*/g) { print lc("$&") . "\n" }' |
+  hfst-ospell -S "$MODEL" |
+  awk -v max="${VRO_SPELLER_MAX_SUGGESTIONS:-10}" '
+    /^Corrections for / {
+      print
+      in_suggestions = 1
+      shown = 0
+      skipped = 0
+      next
+    }
+    /^$/ {
+      if (in_suggestions && skipped > 0) {
+        print "... " skipped " more suggestions omitted"
+      }
+      print
+      in_suggestions = 0
+      next
+    }
+    in_suggestions {
+      if (shown < max) {
+        print
+        shown++
+      } else {
+        skipped++
+      }
+      next
+    }
+    { print }
+    END {
+      if (in_suggestions && skipped > 0) {
+        print "... " skipped " more suggestions omitted"
+      }
+    }
+  '
