@@ -1,5 +1,6 @@
 .venv/
 .env
+.env.tmp
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -8,10 +9,16 @@ __pycache__/
 .claude/
 .codex/
 .agents/
+AGENTS.md
 
 # data/ is populated by scripts/fetch_data.sh (datasets) and
 # scripts/install_giella_artifacts.sh (Giella models); nothing in it is tracked.
 data/
-tools/giella/share/
 *.sqlite-shm
 *.sqlite-wal
+
+# Build/release scratch: Giella source-build cache and the archives that
+# `make package-data` / `make package-giella` create in the repo root.
+.cache/
+/vro-data.tar.xz
+/giella-share.tar.xz

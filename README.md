@@ -86,6 +86,59 @@ present, so a bare clone still reports green — run `make data` and `make giell
 
 </details>
 
+<details>
+<summary><strong>Remove a local setup</strong> (undo <code>make setup</code>)</summary>
+
+<br />
+
+From least to most system-wide. Do the steps that apply, from the repo root.
+
+1. **Client registration** — unregister the server from whichever MCP client you
+   added it to:
+
+   ```sh
+   claude mcp remove vro    # Claude Code
+   codex mcp remove vro     # Codex CLI
+   ```
+
+2. **Local install** — delete the virtualenv:
+
+   ```sh
+   rm -rf .venv
+   ```
+
+3. **Downloads** — the SQLite datasets and Giella models (large; re-fetchable
+   with `make data` / `make giella`):
+
+   ```sh
+   rm -rf data                 # SQLite datasets + the data/giella-share models
+   rm -rf .cache/giella-build  # only if you built Giella from source
+   rm -f .env                  # only if you created one for deployment
+   ```
+
+   To drop the code too, delete the directory you cloned into.
+
+4. **The Apertium/Divvun apt repo** — only if `make setup` added it (it skips
+   this when `divvun-gramcheck` was already installable). Find the source it
+   dropped and remove it:
+
+   ```sh
+   ls /etc/apt/sources.list.d/ | grep -i apertium
+   sudo rm -f /etc/apt/sources.list.d/apertium*.list
+   sudo apt-get update
+   ```
+
+5. **System packages** — remove only the Võro-specific binaries. Leave shared
+   tools (`python3`, `git`, `make`, `perl`, `gawk`, …) in place, since other
+   software may depend on them:
+
+   ```sh
+   sudo apt-get remove hfst hfst-ospell cg3 divvun-gramcheck
+   sudo apt-get autoremove        # optional: drop now-unused dependencies
+   ```
+
+</details>
+
 ## Tools
 
 | Tool | What it does |
