@@ -1,7 +1,7 @@
 <h1 align="center">Võro MCP Server</h1>
 
 <p align="center">
-  Give Claude, Codex, ChatGPT, and other MCP clients real tools for working with the Võro language.
+  Give Claude, Codex, ChatGPT, and other MCP clients tools for working with the Võro language.
 </p>
 
 <p align="center">
