@@ -94,7 +94,8 @@ the package. Smoke-test it with `make test`.
 | `generate_forms` | GiellaLT generation for one exact lemma + tag analysis. |
 | `spellcheck_vro` | Token-level spellcheck with suggestions. |
 | `grammar_check_vro` | Sentence-level grammar check. |
-| `lint_estonian_leakage` | Flag Estonian-looking endings in Võro text. |
+| `find_estonian_leakage` | Scan a larger text and return a slim, deduped list of word forms (and phrases) with Estonian-looking endings. |
+| `lint_estonian_leakage` | In-depth check of specific words/phrases: rule IDs, severities, messages, and hints. |
 | `suggest_correction` | Analyzer-verified fixes for a bad/unknown form. |
 | `translate_vro` | Neurotõlge/TartuNLP translation. |
 | `check_setup` | Report database and external Giella tool availability. |

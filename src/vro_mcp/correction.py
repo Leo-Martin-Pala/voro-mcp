@@ -6,9 +6,9 @@ from typing import Any
 
 from .db import DictionaryStore
 from .giella import GiellaAdapter
+from .tokenization import tokenize
 
 
-TOKEN_RE = re.compile(r"(?iu)[^\W\d_][^\W\d_'´-]*(?:['´-][^\W\d_]+)*")
 SPELLING_SUGGESTION_RE = re.compile(r"^(.+?)\s+([0-9]+(?:\.[0-9]+)?)$")
 VERB_INF_TAGS = ("+V+Inf/mA", "+V+Inf")
 
@@ -210,7 +210,7 @@ class CorrectionSuggester:
 
         tokens: list[str] = []
         for value in values:
-            for token in TOKEN_RE.findall(value.replace("|", "")):
+            for token in tokenize(value.replace("|", "")):
                 cleaned = token.strip(".-()[]{}:;\"'")
                 if len(cleaned) >= 2:
                     tokens.append(cleaned)

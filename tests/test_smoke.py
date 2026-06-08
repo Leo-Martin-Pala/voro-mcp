@@ -92,26 +92,42 @@ class SmokeTests(unittest.TestCase):
     def test_lint_estonian_leakage_flags_estonian_like_endings(self) -> None:
         out = self.tools.lint_estonian_leakage(["teinud", "kirjutab", "kalaq"])
         self.assertEqual(out["checked"], 3)
-        self.assertTrue(out["results"]["teinud"]["tokens"]["teinud"]["flagged"])
+        self.assertTrue(out["results"]["teinud"]["flagged"])
         self.assertEqual(
-            out["results"]["teinud"]["tokens"]["teinud"]["matches"][0]["rule_id"],
+            out["results"]["teinud"]["matches"][0]["rule_id"],
             "EST_ACTIVE_PAST_NUD",
         )
         self.assertEqual(
-            out["results"]["kirjutab"]["tokens"]["kirjutab"]["matches"][0]["rule_id"],
+            out["results"]["kirjutab"]["matches"][0]["rule_id"],
             "EST_3SG_PRESENT_B",
         )
-        self.assertFalse(out["results"]["kalaq"]["tokens"]["kalaq"]["flagged"])
+        self.assertFalse(out["results"]["kalaq"]["flagged"])
 
-    def test_lint_estonian_leakage_window_rule(self) -> None:
-        out = self.tools.lint_estonian_leakage(["ei", "teinud"])
-        self.assertEqual(out["window_matches"][0]["rule_id"], "EST_NEG_PAST_EI_NUD")
-        self.assertTrue(out["results"]["ei"]["flagged"])
-        self.assertTrue(out["results"]["teinud"]["flagged"])
+    def test_lint_estonian_leakage_does_not_tokenize_inputs(self) -> None:
+        # A whole phrase is treated as one unit; the window rule fires via search.
+        out = self.tools.lint_estonian_leakage("ei teinud")
+        self.assertEqual(out["checked"], 1)
+        self.assertEqual(set(out["results"]), {"ei teinud"})
+        self.assertEqual(out["results"]["ei teinud"]["matches"][0]["rule_id"], "EST_NEG_PAST_EI_NUD")
 
     def test_lint_estonian_leakage_allowlist(self) -> None:
         out = self.tools.lint_estonian_leakage("maks")
-        self.assertFalse(out["results"]["maks"]["tokens"]["maks"]["flagged"])
+        self.assertFalse(out["results"]["maks"]["flagged"])
+
+    def test_find_estonian_leakage_slim_scan(self) -> None:
+        text = "Tä läheb kodo. Üts asi om tehtud. Timä ei teinud taad. Tehtud sai tehtud."
+        out = self.tools.find_estonian_leakage(text)
+        # Slim: surface strings only, deduped and frequency-sorted.
+        self.assertEqual(out["flagged_words"][0], "tehtud")  # most frequent
+        self.assertIn("läheb", out["flagged_words"])
+        self.assertIn("ei teinud", out["flagged_phrases"])
+        self.assertNotIn("tokens", out)
+        self.assertNotIn("matches", out)
+
+    def test_find_estonian_leakage_keeps_voro_words(self) -> None:
+        out = self.tools.find_estonian_leakage("Ma olõ-i tennüq taad tüüd mõistaq.")
+        self.assertEqual(out["flagged_words"], [])
+        self.assertEqual(out["flagged_phrases"], [])
 
     def test_suggest_correction_returns_valid_form_as_already_valid(self) -> None:
         result = self.tools.suggest_correction("köüdet")

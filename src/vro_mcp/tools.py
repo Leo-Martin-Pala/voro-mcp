@@ -250,6 +250,10 @@ class VroTools:
             out["note"] = f"Capped at {LEAKAGE_CAP} inputs; {dropped} extra dropped."
         return out
 
+    def find_estonian_leakage(self, text: str, limit: int = 200) -> dict[str, Any]:
+        max_rows = _output_limit(limit, default=200, maximum=500)
+        return self.estonian_leakage.find_in_text(text, limit=max_rows)
+
     def suggest_correction(self, form: str) -> dict[str, Any]:
         try:
             return self.correction_suggester.suggest_correction(form)

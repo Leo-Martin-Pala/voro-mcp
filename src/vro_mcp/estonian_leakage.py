@@ -7,9 +7,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from .tokenization import tokenize
+
 
 RULES_PATH = Path(__file__).resolve().parent / "rules" / "estonian-leakage-rules.json"
-TOKEN_RE = re.compile(r"(?iu)[^\W\d_][^\W\d_'´-]*(?:['´-][^\W\d_]+)*")
 SEVERITY_RANK = {"info": 1, "warning": 2, "error": 3}
 
 
@@ -57,51 +58,99 @@ class EstonianLeakageLinter:
         self.ruleset = load_leakage_rules()
 
     def lint_words(self, words: str | list[str]) -> dict[str, Any]:
+        """In-depth leakage check for discrete words or short phrases.
+
+        Inputs are treated as whole units (one word/phrase each); no tokenization
+        happens here, mirroring ``word_exists_in_bag`` / ``analyze_word``. Use
+        ``find_in_text`` to locate suspects in a larger passage, then pass them
+        here for rule IDs, severities, messages, and hints.
+        """
         inputs = [words] if isinstance(words, str) else list(words)
         cleaned = [str(item).strip() for item in inputs if str(item).strip()]
-
-        results: dict[str, Any] = {}
-        window_matches: list[dict[str, Any]] = []
-        for original in cleaned:
-            tokens = [match.group(0) for match in TOKEN_RE.finditer(original)]
-            token_results = {token: self._lint_token(token) for token in tokens}
-            results[original] = {
-                "tokens": token_results,
-                "flagged": any(item["flagged"] for item in token_results.values()),
-            }
-            if not tokens:
-                results[original]["tokens"] = {}
-
-        joined = " ".join(cleaned)
-        if joined:
-            window_matches = self._lint_window(joined)
-            self._attach_window_matches(results, window_matches)
-
+        results = {original: self._lint_unit(original) for original in cleaned}
         return {
             "ruleset_id": self.ruleset["ruleset_id"],
             "purpose": self.ruleset["purpose"],
             "checked": len(cleaned),
             "results": results,
-            "window_matches": window_matches,
         }
 
-    def _lint_token(self, token: str) -> dict[str, Any]:
-        normalized = _normalize(token)
-        matches = [
-            self._match_payload(rule, token)
-            for rule in self.ruleset["rules"]
-            if rule.scope == "token"
-            and normalized not in rule.allowlist
-            and rule.regex.fullmatch(token)
-        ]
+    def find_in_text(self, text: str, limit: int = 200) -> dict[str, Any]:
+        """Slim leakage scan over a larger text: deduped flagged surface forms
+        plus phrase-level (window) hits, without per-rule detail. The model can
+        re-check any item via ``lint_words`` for the full explanation.
+        """
+        tokens = tokenize(text)
+        counts: dict[str, int] = {}
+        first_seen: dict[str, str] = {}
+        flagged: set[str] = set()
+        for token in tokens:
+            norm = _normalize(token)
+            counts[norm] = counts.get(norm, 0) + 1
+            if norm not in first_seen:
+                first_seen[norm] = token
+                if self._token_is_flagged(token, norm):
+                    flagged.add(norm)
+
+        ordered = sorted(flagged, key=lambda norm: (-counts[norm], norm))
+        flagged_words = [first_seen[norm] for norm in ordered]
+
+        phrases: list[str] = []
+        seen_phrases: set[str] = set()
+        for match in self._lint_window(text):
+            key = _normalize(match["text"])
+            if key not in seen_phrases:
+                seen_phrases.add(key)
+                phrases.append(match["text"])
+
+        return {
+            "ruleset_id": self.ruleset["ruleset_id"],
+            "purpose": self.ruleset["purpose"],
+            "token_count": len(tokens),
+            "unique_word_count": len(counts),
+            "flagged_count": len(flagged_words),
+            "returned_flagged_count": min(len(flagged_words), limit),
+            "flagged_words": flagged_words[:limit],
+            "flagged_phrases": phrases[:limit],
+            "note": (
+                "Slim triage: surface forms with an Estonian-looking ending, plus "
+                "phrase-level hits. Pass any of these to lint_estonian_leakage for "
+                "rule IDs, severities, messages, and hints."
+            ),
+        }
+
+    def _lint_unit(self, unit: str) -> dict[str, Any]:
+        normalized = _normalize(unit)
+        matches: list[dict[str, Any]] = []
+        for rule in self.ruleset["rules"]:
+            if normalized in rule.allowlist:
+                continue
+            if rule.scope == "token":
+                if rule.regex.fullmatch(unit):
+                    matches.append(self._match_payload(rule, unit))
+            else:
+                for match in rule.regex.finditer(unit):
+                    matches.append(
+                        {
+                            **self._match_payload(rule, match.group(0)),
+                            "span": [match.start(), match.end()],
+                        }
+                    )
         matches = self._keep_highest_severity(matches)
-        highest = self._highest_severity(matches)
         return {
             "normalized_token": normalized,
             "flagged": bool(matches),
-            "highest_severity": highest,
+            "highest_severity": self._highest_severity(matches),
             "matches": matches,
         }
+
+    def _token_is_flagged(self, token: str, normalized: str) -> bool:
+        return any(
+            rule.scope == "token"
+            and normalized not in rule.allowlist
+            and rule.regex.fullmatch(token)
+            for rule in self.ruleset["rules"]
+        )
 
     def _lint_window(self, text: str) -> list[dict[str, Any]]:
         matches: list[dict[str, Any]] = []
@@ -139,27 +188,3 @@ class EstonianLeakageLinter:
             return matches
         highest_rank = max(SEVERITY_RANK.get(item["severity"], 0) for item in matches)
         return [item for item in matches if SEVERITY_RANK.get(item["severity"], 0) == highest_rank]
-
-    @staticmethod
-    def _attach_window_matches(
-        results: dict[str, Any],
-        window_matches: list[dict[str, Any]],
-    ) -> None:
-        if not window_matches:
-            return
-        for result in results.values():
-            for token_result in result["tokens"].values():
-                token_result.setdefault("window_matches", [])
-        for window_match in window_matches:
-            normalized_words = {_normalize(token) for token in TOKEN_RE.findall(window_match["text"])}
-            for result in results.values():
-                attached = False
-                for token, token_result in result["tokens"].items():
-                    if _normalize(token) in normalized_words:
-                        token_result.setdefault("window_matches", []).append(window_match)
-                        token_result["flagged"] = True
-                        token_result["highest_severity"] = EstonianLeakageLinter._highest_severity(
-                            token_result["matches"] + token_result["window_matches"]
-                        )
-                        attached = True
-                result["flagged"] = result["flagged"] or attached

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Any
+
+from .tokenization import tokenize
 
 
 _DIRECTION_ALIASES = {
@@ -27,9 +28,6 @@ _SOURCE_TYPE_DESCRIPTIONS = {
     "parallel_corpus_vro_side": "Võro side of a parallel corpus; useful for translated or aligned sentence examples.",
     "tei_literature": "TEI-encoded literature and fiction; useful for literary wording and narrative prose.",
 }
-
-_WORD_RE = re.compile(r"[^\W\d_]+(?:[-'][^\W\d_]+)*", re.UNICODE)
-
 
 def _connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -67,7 +65,7 @@ def _normalise_word(value: str) -> str:
 
 
 def _text_words(text: str) -> list[str]:
-    return [_normalise_word(match.group(0)) for match in _WORD_RE.finditer(text)]
+    return [_normalise_word(token) for token in tokenize(text)]
 
 
 def _fts_query(text: str) -> str:

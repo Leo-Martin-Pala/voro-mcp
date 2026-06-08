@@ -75,6 +75,11 @@ truth.
      automatically wrong).
    * Run `find_unrecognized_words` ("unrecognized" = not recognized by the Giella
      analyzer, not automatically wrong).
+   * Run `find_estonian_leakage` to scan the whole draft for word forms (and
+     phrases) with Standard Estonian-looking endings ("flagged" = ending looks
+     Estonian, not automatically wrong). This returns a slim, deduped list; pass
+     any flagged item to `lint_estonian_leakage` later if you want the rule and
+     hint behind it.
    * Build a list of suspicious tokens and phrases. Do not automatically change
      proper nouns, acronyms, foreign names, URLs, source names, or quoted titles
      just because they are unknown.
@@ -114,7 +119,8 @@ truth.
      uncertain.
    * `word_exists_in_bag` to check whether a surface form has attested usage.
    * `suggest_correction` for a single bad-looking or unknown form.
-   * `lint_estonian_leakage` to catch Standard Estonian-looking forms and endings.
+   * `lint_estonian_leakage` for the in-depth check of specific words/phrases
+     flagged by `find_estonian_leakage` (rule IDs, severities, messages, hints).
    * `spellcheck_vro` for token-level and `grammar_check_vro` for sentence-level
      warnings.
    * Treat all tool outputs as evidence and warnings, not absolute truth.

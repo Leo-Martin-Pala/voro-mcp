@@ -178,14 +178,29 @@ def create_server() -> Any:
     @mcp.tool()
     def lint_estonian_leakage(words: str | list[str]) -> dict[str, Any]:
         """
-        Conservative Standard Estonian leakage linter for intended Võro text.
-        Pass a single word/short phrase, or a list of up to 100 inputs. It flags
-        Estonian-looking inflectional endings such as -nud, -tud/-dud, -b,
-        -vad, -sse, and -sid, returning rule IDs, severities, messages, and
-        hints. Findings mean "this ending is Estonian-looking", not proof that
-        the whole word is Estonian.
+        In-depth Standard Estonian leakage linter for discrete Võro words. Pass a
+        single word/short phrase, or a list of up to 100 inputs; each input is
+        checked as a whole unit with no tokenization (mirrors word_exists_in_bag
+        and analyze_word). For a larger passage, scan it with find_estonian_leakage
+        first, then pass the flagged words/phrases here. It flags Estonian-looking
+        inflectional endings such as -nud, -tud/-dud, -b, -vad, -sse, and -sid,
+        returning rule IDs, severities, messages, and hints. Findings mean "this
+        ending is Estonian-looking", not proof that the whole word is Estonian.
         """
         return tools.lint_estonian_leakage(words)
+
+    @mcp.tool()
+    def find_estonian_leakage(text: str, limit: int = 200) -> dict[str, Any]:
+        """
+        Tokenize a larger intended-Võro text and return a slim list of surface
+        word forms whose ending looks like Standard Estonian (e.g. -nud, -tud/-dud,
+        -b, -vad, -sse, -sid), plus any phrase-level hits such as "ei tehtud" past
+        negation. Output is deduplicated and frequency-sorted, with no per-rule
+        detail, so it stays small for long text. Pass any flagged word or phrase to
+        lint_estonian_leakage for rule IDs, severities, messages, and hints.
+        Flagged means "ending looks Estonian", not proof the word is wrong.
+        """
+        return tools.find_estonian_leakage(text, limit=limit)
 
     @mcp.tool()
     def suggest_correction(form: str) -> dict[str, Any]:
