@@ -104,9 +104,9 @@ def create_server() -> Any:
         Look up one or more words. Pass a single string, or a list of up to 15
         strings to look up many in one call. Output is keyed by input query;
         each result is a compact concept object with language keys such as en,
-        et, and vro. Search English, Estonian, or Võro; direction can narrow the
-        input side with en-vro, et-vro, or vro-en. Leave direction unset when
-        unsure.
+        et, and vro. Direction accepts the standard values en-vro, et-vro,
+        vro-en, and vro-et; directed results include a direction field and only
+        that source/target language pair. Leave direction unset when unsure.
         """
         return tools.lookup_word(query, direction=direction, limit=limit)
 

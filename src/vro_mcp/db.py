@@ -8,16 +8,24 @@ from typing import Any
 from .tokenization import tokenize
 
 
-_DIRECTION_TO_QUERY_LANGUAGE = {
-    "en-vro": "en",
-    "en_vro": "en",
-    "vro-en": "vro",
-    "vro_en": "vro",
-    "et-vro": "et",
-    "et_vro": "et",
-    "vro-et": "vro",
-    "vro_et": "vro",
+_DIRECTION_ALIASES = {
+    "en-vro": "en-vro",
+    "en_vro": "en-vro",
+    "vro-en": "vro-en",
+    "vro_en": "vro-en",
+    "et-vro": "et-vro",
+    "et_vro": "et-vro",
+    "vro-et": "vro-et",
+    "vro_et": "vro-et",
 }
+
+_DIRECTION_PAIRS = {
+    "en-vro": ("en", "vro"),
+    "et-vro": ("et", "vro"),
+    "vro-en": ("vro", "en"),
+    "vro-et": ("vro", "et"),
+}
+
 
 def _connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -31,13 +39,27 @@ def _limit(value: int | None, default: int = 10, maximum: int = 50) -> int:
     return max(1, min(int(value), maximum))
 
 
-def _query_language_from_direction(value: str | None) -> str | None:
+def _parse_direction(value: str | None) -> tuple[str | None, str | None, str | None]:
     if value is None:
-        return None
-    direction = value.strip().lower()
+        return None, None, None
+    direction = value.strip().lower().replace(" ", "")
     if not direction:
-        return None
-    return _DIRECTION_TO_QUERY_LANGUAGE.get(direction, direction if direction in {"en", "et", "vro"} else None)
+        return None, None, None
+    canonical = _DIRECTION_ALIASES.get(direction)
+    if canonical:
+        source_lang, target_lang = _DIRECTION_PAIRS[canonical]
+        return canonical, source_lang, target_lang
+    if direction in {"en", "et", "vro"}:
+        return None, direction, None
+    return None, None, None
+
+
+def _available_directions(languages: set[str]) -> list[str]:
+    return [
+        direction
+        for direction, (source_lang, target_lang) in _DIRECTION_PAIRS.items()
+        if source_lang in languages and target_lang in languages
+    ]
 
 
 def _normalise_word(value: str) -> str:
@@ -62,11 +84,19 @@ class DictionaryStore:
         if not word:
             return []
         max_rows = _limit(limit)
-        query_language = _query_language_from_direction(direction)
-        language_filter = "and language = ?" if query_language else ""
+        canonical_direction, source_lang, target_lang = _parse_direction(direction)
+        language_filter = "and language = ?" if source_lang else ""
+        target_filter = (
+            "and exists (select 1 from entries target "
+            "where target.entry_id = entries.entry_id and target.language = ?)"
+            if target_lang
+            else ""
+        )
         params: list[Any] = [word]
-        if query_language:
-            params.append(query_language)
+        if source_lang:
+            params.append(source_lang)
+        if target_lang:
+            params.append(target_lang)
         params.append(max_rows)
 
         with closing(_connect(self.path)) as conn:
@@ -76,14 +106,17 @@ class DictionaryStore:
                     f"""
                     select distinct entry_id
                     from entries
-                    where word = ? {language_filter}
+                    where word = ? {language_filter} {target_filter}
                     order by entry_id
                     limit ?
                     """,
                     params,
                 )
             ]
-            return [self._concept(conn, entry_id) for entry_id in entry_ids]
+            return [
+                self._concept(conn, entry_id, canonical_direction)
+                for entry_id in entry_ids
+            ]
 
     def find_correction_entries(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
         return self.lookup_word(query, direction="vro", limit=limit)
@@ -94,8 +127,15 @@ class DictionaryStore:
         info = row["info"]
         return f"{word} ({info})" if info else word
 
-    def _concept(self, conn: sqlite3.Connection, entry_id: str) -> dict[str, list[str]]:
-        concept: dict[str, list[str]] = {}
+    def _concept(
+        self,
+        conn: sqlite3.Connection,
+        entry_id: str,
+        direction: str | None = None,
+    ) -> dict[str, Any]:
+        concept: dict[str, Any] = {}
+        if direction:
+            concept["direction"] = direction
         rows = conn.execute(
             """
             select language, word, info
@@ -105,8 +145,14 @@ class DictionaryStore:
             """,
             (entry_id,),
         )
+        allowed_languages = set(_DIRECTION_PAIRS[direction]) if direction else None
         for row in rows:
+            if allowed_languages is not None and row["language"] not in allowed_languages:
+                continue
             concept.setdefault(row["language"], []).append(self._format_term(row))
+        if not direction:
+            languages = {key for key in concept if key in {"en", "et", "vro"}}
+            concept["available_directions"] = _available_directions(languages)
         return concept
 
 

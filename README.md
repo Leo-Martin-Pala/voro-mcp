@@ -163,7 +163,9 @@ tool outputs are intentionally compact so MCP clients spend less context on
 internal IDs, debug metadata, and provenance fields.
 
 The open dictionary currently contains IDS concepts with English, Estonian, and
-Võro terms where available.
+Võro terms where available. `lookup_word` accepts standard direction values
+`en-vro`, `et-vro`, `vro-en`, and `vro-et`; directed results include the
+requested `direction`.
 
 ## Resources
 

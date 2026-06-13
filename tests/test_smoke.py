@@ -176,10 +176,29 @@ class SmokeTests(unittest.TestCase):
         result = self.tools.generate_forms("uma", tags="A+Sg+Ill")
         self.assertIn("umma", result.get("forms", []))
 
-    def test_lookup_word_accepts_user_facing_direction_alias(self) -> None:
+    def test_lookup_word_accepts_standard_direction(self) -> None:
         self._require_db("dictionary")
         out = self.tools.lookup_word("vesi", direction="vro-en", limit=1)
-        self.assertTrue(out["vesi"])
+        self.assertEqual(out["vesi"][0]["direction"], "vro-en")
+        self.assertTrue(out["vesi"][0]["en"])
+        self.assertTrue(out["vesi"][0]["vro"])
+
+    def test_lookup_word_supports_standard_directions(self) -> None:
+        self._require_db("dictionary")
+        cases = {
+            "en-vro": ("world", "en", "vro"),
+            "et-vro": ("maailm", "et", "vro"),
+            "vro-en": ("vesi", "vro", "en"),
+            "vro-et": ("vesi", "vro", "et"),
+        }
+        for direction, (query, source_lang, target_lang) in cases.items():
+            with self.subTest(direction=direction):
+                out = self.tools.lookup_word(query, direction=direction, limit=1)
+                self.assertTrue(out[query])
+                result = out[query][0]
+                self.assertEqual(result["direction"], direction)
+                self.assertTrue(result[source_lang])
+                self.assertTrue(result[target_lang])
 
     def test_grammar_resources_are_readable(self) -> None:
         self.assertIn("Võro noun declension", _read_resource("resources/noun-cases.md"))
