@@ -39,56 +39,51 @@ class SmokeTests(unittest.TestCase):
     def test_lookup_word_runs(self) -> None:
         self._require_db("dictionary")
         out = self.tools.lookup_word("world", limit=1)
-        results = out["results"]["world"]
+        results = out["world"]
         self.assertTrue(results)
-        self.assertEqual(results[0]["headword"], "world")
-        self.assertIn("direction_description", results[0])
+        self.assertEqual(results[0]["en"], ["world"])
+        self.assertIn("maailm", results[0]["vro"])
 
     def test_lookup_word_batched_is_keyed(self) -> None:
         self._require_db("dictionary")
         out = self.tools.lookup_word(["world", "water"])
-        self.assertEqual(set(out["results"]), {"world", "water"})
-        self.assertEqual(out["per_query_limit"], 3)  # batched default
-        self.assertTrue(out["results"]["world"])
+        self.assertEqual(set(out), {"world", "water"})
+        self.assertTrue(out["world"])
 
     def test_find_usage_examples_runs(self) -> None:
         self._require_db("corpus")
         out = self.tools.find_usage_examples("naasõ", limit=1)
-        results = out["results"]["naasõ"]
+        results = out["naasõ"]
         self.assertTrue(results)
-        self.assertIn("source_type", results[0])
-        self.assertIn("source_description", results[0])
-        self.assertNotIn("document_title", results[0])
+        self.assertIsInstance(results[0], str)
+        self.assertLessEqual(len(results[0]), 266)
+        self.assertNotIn("public_id", results[0])
 
     def test_word_exists_in_bag_runs(self) -> None:
         self._require_db("word_bag")
         out = self.tools.word_exists_in_bag("Miä", include_sources=False)
-        result = out["results"]["Miä"]
-        self.assertTrue(result["exists"])
-        self.assertEqual(result["normalized_word"], "miä")
+        self.assertGreater(out["Miä"], 0)
 
     def test_word_exists_in_bag_batched_is_keyed(self) -> None:
         self._require_db("word_bag")
         out = self.tools.word_exists_in_bag(["Miä", "xyzzyvrotest"], include_sources=False)
-        self.assertEqual(out["checked"], 2)
-        self.assertTrue(out["results"]["Miä"]["exists"])
-        self.assertFalse(out["results"]["xyzzyvrotest"]["exists"])
+        self.assertGreater(out["Miä"], 0)
+        self.assertEqual(out["xyzzyvrotest"], 0)
 
     def test_find_unknown_words_runs(self) -> None:
         self._require_db("word_bag")
         result = self.tools.find_unknown_words("Miä olõ hüä xyzzyvrotest", limit=10)
-        unknown = {item["normalized_word"] for item in result["unknown_words"]}
-        self.assertIn("xyzzyvrotest", unknown)
+        self.assertIn("xyzzyvrotest", result["unknown"])
+        self.assertEqual(result["checked"], 4)
 
     def test_find_unrecognized_words_runs(self) -> None:
         result = self.tools.find_unrecognized_words("Miä olõ hüä xyzzyvrotest", limit=10)
-        if not result.get("available"):
+        if result.get("available") is False:
             self.skipTest("analyzer not available in this environment")
-        unrecognized = {item["normalized_word"] for item in result["unrecognized_words"]}
-        self.assertIn("xyzzyvrotest", unrecognized)
-        self.assertNotIn("miä", unrecognized)
-        self.assertFalse(result["prefiltered_with_word_bag"])
-        self.assertGreaterEqual(result["analyzer_candidate_count"], 4)
+        self.assertIn("xyzzyvrotest", result["unrecognized"])
+        self.assertNotIn("miä", result["unrecognized"])
+        self.assertFalse(result["prefiltered"])
+        self.assertGreaterEqual(result["checked"], 4)
 
     def test_find_unrecognized_words_prefilter_runs(self) -> None:
         result = self.tools.find_unrecognized_words(
@@ -96,25 +91,24 @@ class SmokeTests(unittest.TestCase):
             prefilter=True,
             limit=10,
         )
-        if not result.get("available"):
+        if result.get("available") is False:
             self.skipTest("analyzer not available in this environment")
-        unrecognized = {item["normalized_word"] for item in result["unrecognized_words"]}
-        self.assertIn("xyzzyvrotest", unrecognized)
-        self.assertTrue(result["prefiltered_with_word_bag"])
-        self.assertIn("prefilter_note", result)
-        self.assertLess(result["analyzer_candidate_count"], result["unique_word_count"])
+        self.assertIn("xyzzyvrotest", result["unrecognized"])
+        self.assertTrue(result["prefiltered"])
+        self.assertLess(result["checked"], 4)
 
     def test_giella_unavailable_is_structured(self) -> None:
-        result = self.tools.analyze_word("võro")
+        tools = VroTools(replace(load_settings(), analyzer_cmd="/tmp/no-such-analyzer"))
+        result = tools.analyze_word("võro")
         self.assertIn("available", result)
-        self.assertIn("results", result)
+        self.assertIn("setup", result)
 
     def test_analyze_word_batched_is_keyed(self) -> None:
         out = self.tools.analyze_word(["uma", "kala"])
-        if not out.get("available"):
+        if out.get("available") is False:
             self.skipTest("analyzer not available in this environment")
-        self.assertEqual(set(out["results"]), {"uma", "kala"})
-        self.assertTrue(out["results"]["kala"]["recognized"])
+        self.assertEqual(set(out), {"uma", "kala"})
+        self.assertTrue(out["kala"])
 
     def test_lint_estonian_leakage_flags_estonian_like_endings(self) -> None:
         out = self.tools.lint_estonian_leakage(["teinud", "kirjutab", "kalaq"])
@@ -173,18 +167,19 @@ class SmokeTests(unittest.TestCase):
     def test_spellcheck_tokenizes_sentence_input(self) -> None:
         self._require_giella("speller")
         result = self.tools.spellcheck_vro("Miä olõ hüä tekstt.")
-        self.assertIn('"tekstt" is NOT in the lexicon', result.get("output", ""))
-        self.assertNotIn('"miä" is NOT in the lexicon', result.get("output", ""))
+        output = "\n".join(result.get("lines", []))
+        self.assertIn('"tekstt" is NOT in the lexicon', output)
+        self.assertNotIn('"miä" is NOT in the lexicon', output)
 
     def test_generate_forms_runs_with_giella_tags(self) -> None:
         self._require_giella("generator")
         result = self.tools.generate_forms("uma", tags="A+Sg+Ill")
-        self.assertIn("umma", result.get("output", ""))
+        self.assertIn("umma", result.get("forms", []))
 
     def test_lookup_word_accepts_user_facing_direction_alias(self) -> None:
         self._require_db("dictionary")
         out = self.tools.lookup_word("vesi", direction="vro-en", limit=1)
-        self.assertTrue(out["results"]["vesi"])
+        self.assertTrue(out["vesi"])
 
     def test_grammar_resources_are_readable(self) -> None:
         self.assertIn("Võro noun declension", _read_resource("resources/noun-cases.md"))

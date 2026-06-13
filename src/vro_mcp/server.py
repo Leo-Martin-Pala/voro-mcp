@@ -102,12 +102,11 @@ def create_server() -> Any:
     ) -> dict[str, Any]:
         """
         Look up one or more words. Pass a single string, or a list of up to 15
-        strings to look up many in one call. The response is keyed by input
-        query under "results". The installed open dictionary covers
-        English-Võro. Search in English or Võro; use direction en-vro or vro-en
-        when you know the side, or leave direction unset. With multiple queries
-        the per-query limit defaults to 3 (max 10); a single query defaults to
-        10 (max 50).
+        strings to look up many in one call. Output is keyed by input query;
+        each result is a compact concept object with language keys such as en,
+        et, and vro. Search English, Estonian, or Võro; direction can narrow the
+        input side with en-vro, et-vro, or vro-en. Leave direction unset when
+        unsure.
         """
         return tools.lookup_word(query, direction=direction, limit=limit)
 
@@ -117,24 +116,21 @@ def create_server() -> Any:
     ) -> dict[str, Any]:
         """
         Find real usage snippets from the local Võro corpus. Pass a single
-        string, or a list of up to 15 strings to search many terms at once; the
-        response is keyed by input query under "results". Optional source_type
-        filters: wiki_article for encyclopedia text, parallel_corpus_vro_side
-        for translated/aligned text, and tei_literature for fiction/literature.
-        With multiple queries the per-query limit defaults to 3 (max 10); a
-        single query defaults to 10 (max 50).
+        string, or a list of up to 15 strings to search many terms at once.
+        Output is keyed by input query and contains short text snippets only.
+        Optional source_type filters: wiki_article for encyclopedia text,
+        parallel_corpus_vro_side for translated/aligned text, and
+        tei_literature for fiction/literature.
         """
         return tools.find_usage_examples(query, source_type=source_type, limit=limit)
 
     @mcp.tool()
     def word_exists_in_bag(words: str | list[str], include_sources: bool = True) -> dict[str, Any]:
         """
-        Check whether word surface forms exist in the Võro word bag built from
-        corpus and dictionary sources. Pass a single string, or a list
-        of up to 100 words to check many at once; the response is keyed by input
-        word under "results". Input is normalized to lowercase. Existence means
-        the surface form has appeared before; it does not prove the form is
-        standard or correct in context.
+        Check whether word surface forms exist in the Võro word bag. Pass a
+        single string, or a list of up to 100 words. Output is keyed by input
+        word; the integer value is the stored count, with 0 meaning absent.
+        Existence does not prove the form is standard or correct in context.
         """
         return tools.word_exists_in_bag(words, include_sources=include_sources)
 
@@ -144,7 +140,7 @@ def create_server() -> Any:
         Tokenize a larger Võro text/article and return unique word forms absent
         from the surface-form word bag. Use before or after translation to find
         forms that have not appeared in the current corpus/dictionary bag.
-        Unknown means absent from the bag, not necessarily incorrect.
+        Output is compact: unknown forms plus the number of checked tokens.
         """
         return tools.find_unknown_words(text, limit=limit)
 
@@ -159,9 +155,8 @@ def create_server() -> Any:
         GiellaLT analyzer marks as unrecognized (+?). By default every unique
         token is analyzer-checked. Set prefilter=true to first skip forms already
         present in the word bag; this is faster for long text, but words in the
-        bag are not analyzer-checked. Unrecognized means analyzer coverage failed,
-        not guaranteed incorrect spelling. Returned rows are capped by limit
-        (max 500).
+        bag are not analyzer-checked. Output contains only unrecognized forms,
+        checked candidate count, and whether prefiltering was used.
         """
         return tools.find_unrecognized_words(text, prefilter=prefilter, limit=limit)
 
@@ -170,8 +165,8 @@ def create_server() -> Any:
         """
         Analyze one or more Võro words with GiellaLT. Pass a single string, or a
         list of up to 100 words analyzed in one pass; the response is keyed by
-        surface form under "results", each with "recognized" and analysis
-        "lines". Treat output as linguistic-tool guidance, not guaranteed truth.
+        input form. Each value is a compact list of analysis strings; an empty
+        list means no recognized analysis. Treat output as guidance.
         """
         return tools.analyze_word(words)
 
@@ -206,9 +201,9 @@ def create_server() -> Any:
     def suggest_correction(form: str) -> dict[str, Any]:
         """
         Suggest the best Võro correction for one bad or unknown form by combining
-        speller suggestions, dictionary candidates, generated dictionary-lemma
-        inflections, and analyzer confirmation. The best result is only promoted
-        when the candidate analyzes at weight 0.
+        speller suggestions, compact dictionary concepts, generated forms, and
+        analyzer confirmation. The best result is only promoted when the
+        candidate analyzes at weight 0.
         """
         return tools.suggest_correction(form)
 
@@ -218,7 +213,7 @@ def create_server() -> Any:
         tags: str | None = None,
         part_of_speech: str | None = None,
     ) -> dict[str, Any]:
-        """Generate form(s) for one exact Giella analysis, e.g. lemma=uma and tags=A+Sg+Ill. This is not a full paradigm generator."""
+        """Generate compact form list for one exact Giella analysis, e.g. lemma=uma and tags=A+Sg+Ill. This is not a full paradigm generator."""
         return tools.generate_forms(lemma, tags=tags, part_of_speech=part_of_speech)
 
     @mcp.tool()
@@ -246,7 +241,7 @@ def create_server() -> Any:
         Translate text to or from Võro with Neurotõlge/TartuNLP. Use 3-letter
         API language codes. From Võro supports target_lang eng, est, fin, rus,
         hun, lav, nor. To Võro supports source_lang eng, est, fin, rus, lav,
-        hun, nor. Translation quality can be unreliable.
+        hun, nor. Successful output omits raw API payloads.
         """
         return tools.translate_vro(text, source_lang=source_lang, target_lang=target_lang)
 

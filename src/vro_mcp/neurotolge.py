@@ -22,7 +22,7 @@ class NeurotolgeClient:
     def translate(self, text: str, source_lang: str | None = None, target_lang: str | None = None) -> dict[str, Any]:
         text = text.strip()
         if not text:
-            return {"translated_text": "", "source_lang": source_lang, "target_lang": target_lang}
+            return {"text": "", "source_lang": source_lang, "target_lang": target_lang}
 
         source = source_lang or ("est" if target_lang == "vro" else "vro")
         target = target_lang or ("est" if source == "vro" else "vro")
@@ -77,10 +77,9 @@ class NeurotolgeClient:
 
         translated = self._find_translation(data)
         return {
-            "translated_text": translated,
+            "text": translated,
             "source_lang": source,
             "target_lang": target,
-            "raw": data,
         }
 
     @staticmethod

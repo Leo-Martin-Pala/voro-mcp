@@ -90,13 +90,9 @@ class VroTools:
             }
         except sqlite3.Error as exc:
             return self._db_unavailable("dictionary", self.settings.dictionary_db, exc)
-        out: dict[str, Any] = {
-            "results": results,
-            "queries": queries,
-            "per_query_limit": per,
-        }
+        out: dict[str, Any] = results
         if dropped:
-            out["note"] = f"Capped at {LOOKUP_CAP} queries; {dropped} extra dropped."
+            out["_dropped"] = dropped
         return out
 
     def find_usage_examples(
@@ -114,13 +110,9 @@ class VroTools:
             }
         except sqlite3.Error as exc:
             return self._db_unavailable("corpus", self.settings.corpus_db, exc)
-        out: dict[str, Any] = {
-            "results": results,
-            "queries": queries,
-            "per_query_limit": per,
-        }
+        out: dict[str, Any] = results
         if dropped:
-            out["note"] = f"Capped at {USAGE_CAP} queries; {dropped} extra dropped."
+            out["_dropped"] = dropped
         return out
 
     def word_exists_in_bag(
@@ -130,12 +122,15 @@ class VroTools:
     ) -> dict[str, Any]:
         items, dropped = _prepare_batch(words, EXISTS_CAP)
         try:
-            results = self.word_bag.exists_many(items, include_sources=include_sources)
+            rows = self.word_bag.exists_many(items, include_sources=include_sources)
         except sqlite3.Error as exc:
             return self._db_unavailable("word_bag", self.settings.word_bag_db, exc)
-        out: dict[str, Any] = {"results": results, "checked": len(items)}
+        out: dict[str, Any] = {
+            original: int(result.get("total_count", 0))
+            for original, result in rows.items()
+        }
         if dropped:
-            out["note"] = f"Capped at {EXISTS_CAP} words; {dropped} extra dropped."
+            out["_dropped"] = dropped
         return out
 
     def find_unknown_words(self, text: str, limit: int = 50) -> dict[str, Any]:
@@ -171,76 +166,48 @@ class VroTools:
             if word not in known
         ]
         if not candidates:
-            out: dict[str, Any] = {
-                "available": True,
-                "method": "giella_analyzer",
-                "prefiltered_with_word_bag": prefilter,
-                "token_count": len(tokens),
-                "unique_word_count": len(counts),
-                "analyzer_candidate_count": 0,
-                "unrecognized_count": 0,
-                "returned_unrecognized_count": 0,
-                "unrecognized_words": [],
-                "note": "Unrecognized means the Giella analyzer returned only +? analyses, not proof the form is wrong.",
-            }
-            if prefilter:
-                out["known_unique_count"] = len(known)
-                out["prefilter_note"] = (
-                    "Words present in the word bag were not analyzer-checked."
-                )
-            return out
+            return {"unrecognized": [], "checked": 0, "prefiltered": prefilter}
 
         analysis = self.giella.analyze_words(candidates)
         if not analysis.get("available"):
             analysis.update(
                 {
-                    "method": "giella_analyzer",
-                    "prefiltered_with_word_bag": prefilter,
-                    "token_count": len(tokens),
-                    "unique_word_count": len(counts),
-                    "analyzer_candidate_count": len(candidates),
-                    "unrecognized_words": [],
+                    "checked": len(candidates),
+                    "unrecognized": [],
+                    "prefiltered": prefilter,
                 }
             )
-            if prefilter:
-                analysis["known_unique_count"] = len(known)
             return analysis
 
         results = analysis.get("results", {})
         unrecognized = [
-            {
-                "word": first_seen[word],
-                "normalized_word": word,
-                "count_in_text": counts[word],
-                "lines": results.get(word, {}).get("lines", []),
-            }
+            first_seen[word]
             for word in candidates
             if not results.get(word, {}).get("recognized", False)
         ]
-        out = {
-            "available": True,
-            "method": "giella_analyzer",
-            "prefiltered_with_word_bag": prefilter,
-            "token_count": len(tokens),
-            "unique_word_count": len(counts),
-            "analyzer_candidate_count": len(candidates),
-            "unrecognized_count": len(unrecognized),
-            "returned_unrecognized_count": min(len(unrecognized), max_rows),
-            "unrecognized_words": unrecognized[:max_rows],
-            "stderr": analysis.get("stderr", ""),
-            "note": "Unrecognized means the Giella analyzer returned only +? analyses, not proof the form is wrong.",
+        return {
+            "unrecognized": unrecognized[:max_rows],
+            "checked": len(candidates),
+            "prefiltered": prefilter,
         }
-        if prefilter:
-            out["known_unique_count"] = len(known)
-            out["prefilter_note"] = "Words present in the word bag were not analyzer-checked."
-        return out
 
     def analyze_word(self, words: str | list[str]) -> dict[str, Any]:
         items, dropped = _prepare_batch(words, ANALYZE_CAP)
-        out = self.giella.analyze_words(items)
-        out["checked"] = len(items)
+        result = self.giella.analyze_words(items)
+        if not result.get("available"):
+            return result
+        raw_results = result.get("results", {})
+        out: dict[str, Any] = {}
+        for item in items:
+            lines = raw_results.get(item, {}).get("lines", [])
+            out[item] = [
+                parts[1]
+                for line in lines
+                if not line.rstrip().endswith("+?")
+                if len(parts := line.split("\t")) >= 2
+            ]
         if dropped:
-            out["note"] = f"Capped at {ANALYZE_CAP} words; {dropped} extra dropped."
+            out["_dropped"] = dropped
         return out
 
     def lint_estonian_leakage(self, words: str | list[str]) -> dict[str, Any]:
@@ -266,13 +233,27 @@ class VroTools:
         tags: str | None = None,
         part_of_speech: str | None = None,
     ) -> dict[str, Any]:
-        return self.giella.generate_forms(lemma, tags=tags, part_of_speech=part_of_speech)
+        result = self.giella.generate_forms(lemma, tags=tags, part_of_speech=part_of_speech)
+        if not result.get("available"):
+            return result
+        forms = []
+        for line in result.get("lines", []):
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[1].strip():
+                forms.append(parts[1].strip())
+        return {"forms": forms}
 
     def spellcheck_vro(self, text: str) -> dict[str, Any]:
-        return self.giella.spellcheck_vro(text)
+        result = self.giella.spellcheck_vro(text)
+        if not result.get("available"):
+            return result
+        return {"lines": result.get("lines", [])}
 
     def grammar_check_vro(self, text: str) -> dict[str, Any]:
-        return self.giella.grammar_check_vro(text)
+        result = self.giella.grammar_check_vro(text)
+        if not result.get("available"):
+            return result
+        return {"lines": result.get("lines", [])}
 
     def translate_vro(
         self,
@@ -285,9 +266,32 @@ class VroTools:
     def check_setup(self) -> dict[str, Any]:
         return {
             "databases": {
-                "dictionary": self._db_availability("dictionary", self.settings.dictionary_db, "entries"),
-                "corpus": self._db_availability("corpus", self.settings.corpus_db, "segments"),
-                "word_bag": self._db_availability("word_bag", self.settings.word_bag_db, "words"),
+                "dictionary": self._db_availability(
+                    "dictionary",
+                    self.settings.dictionary_db,
+                    {"entries": {"entry_id", "source", "language", "word", "info"}},
+                ),
+                "corpus": self._db_availability(
+                    "corpus",
+                    self.settings.corpus_db,
+                    {
+                        "segments": {
+                            "id",
+                            "public_id",
+                            "source_slug",
+                            "source_type",
+                            "document_id",
+                            "segment_index",
+                            "text",
+                        },
+                        "segments_fts": {"text"},
+                    },
+                ),
+                "word_bag": self._db_availability(
+                    "word_bag",
+                    self.settings.word_bag_db,
+                    {"words": {"word", "total_count"}},
+                ),
             },
             "giella": self.giella.availability(),
         }
@@ -307,10 +311,32 @@ class VroTools:
         }
 
     @classmethod
-    def _db_availability(cls, name: str, path: Any, table: str) -> dict[str, Any]:
+    def _db_availability(
+        cls,
+        name: str,
+        path: Any,
+        required_schema: dict[str, set[str]],
+    ) -> dict[str, Any]:
         try:
             with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
-                conn.execute(f"select 1 from {table} limit 1").fetchone()
+                for table, required_columns in required_schema.items():
+                    row = conn.execute(
+                        "select 1 from sqlite_master where name = ? limit 1",
+                        (table,),
+                    ).fetchone()
+                    if row is None:
+                        raise sqlite3.OperationalError(f"missing required table: {table}")
+                    columns = {
+                        item[1]
+                        for item in conn.execute(f"pragma table_info({table})")
+                    }
+                    missing = sorted(required_columns - columns)
+                    if missing:
+                        raise sqlite3.OperationalError(
+                            f"{table} missing required column(s): {', '.join(missing)}"
+                        )
+                first_table = next(iter(required_schema))
+                conn.execute(f"select 1 from {first_table} limit 1").fetchone()
         except sqlite3.Error as exc:
             return cls._db_unavailable(name, path, exc)
         return {"available": True, "path": str(path)}

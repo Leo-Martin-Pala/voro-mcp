@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -9,24 +8,15 @@ from typing import Any
 from .tokenization import tokenize
 
 
-_DIRECTION_ALIASES = {
-    "en-vro": "en-vro",
-    "vro-en": "en-vro",
-    "en_vro": "en-vro",
-    "vro_en": "en-vro",
-}
-
-_DIRECTION_DESCRIPTIONS = {
-    "en-vro": (
-        "English-Võro dictionary data. Search English or Võro first; use "
-        "direction aliases en-vro or vro-en when you know the side."
-    ),
-}
-
-_SOURCE_TYPE_DESCRIPTIONS = {
-    "wiki_article": "Võro wiki-style encyclopedia text; useful for neutral informational usage.",
-    "parallel_corpus_vro_side": "Võro side of a parallel corpus; useful for translated or aligned sentence examples.",
-    "tei_literature": "TEI-encoded literature and fiction; useful for literary wording and narrative prose.",
+_DIRECTION_TO_QUERY_LANGUAGE = {
+    "en-vro": "en",
+    "en_vro": "en",
+    "vro-en": "vro",
+    "vro_en": "vro",
+    "et-vro": "et",
+    "et_vro": "et",
+    "vro-et": "vro",
+    "vro_et": "vro",
 }
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -35,29 +25,19 @@ def _connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def _json_loads(value: str | None) -> dict[str, Any]:
-    if not value:
-        return {}
-    try:
-        loaded = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return loaded if isinstance(loaded, dict) else {}
-
-
 def _limit(value: int | None, default: int = 10, maximum: int = 50) -> int:
     if value is None:
         return default
     return max(1, min(int(value), maximum))
 
 
-def _normalise_direction(value: str | None) -> str | None:
+def _query_language_from_direction(value: str | None) -> str | None:
     if value is None:
         return None
     direction = value.strip().lower()
     if not direction:
         return None
-    return _DIRECTION_ALIASES.get(direction, direction)
+    return _DIRECTION_TO_QUERY_LANGUAGE.get(direction, direction if direction in {"en", "et", "vro"} else None)
 
 
 def _normalise_word(value: str) -> str:
@@ -66,13 +46,6 @@ def _normalise_word(value: str) -> str:
 
 def _text_words(text: str) -> list[str]:
     return [_normalise_word(token) for token in tokenize(text)]
-
-
-def _fts_query(text: str) -> str:
-    tokens = _text_words(text)
-    if not tokens:
-        return '""'
-    return " OR ".join(tokens[:5])
 
 
 class DictionaryStore:
@@ -85,197 +58,56 @@ class DictionaryStore:
         direction: str | None = None,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        query = query.strip()
-        if not query:
+        word = _normalise_word(query)
+        if not word:
             return []
         max_rows = _limit(limit)
-        like = f"%{query}%"
-        direction = _normalise_direction(direction)
-
-        direction_filter = "and e.direction = ?" if direction else ""
-        direction_args: list[Any] = [direction] if direction else []
-
-        sql = f"""
-            with candidates as (
-                select e.id, 0 as rank
-                from entries e
-                where e.headword = ? {direction_filter}
-                union
-                select e.id, 1 as rank
-                from entries e join forms f on f.entry_id = e.id
-                where f.form = ? {direction_filter}
-                union
-                select e.id, 2 as rank
-                from entries e join translations t on t.entry_id = e.id
-                where t.text = ? {direction_filter}
-                union
-                select e.id, 3 as rank
-                from entries e
-                where e.headword like ? {direction_filter}
-                union
-                select e.id, 4 as rank
-                from entries e join forms f on f.entry_id = e.id
-                where f.form like ? {direction_filter}
-                union
-                select e.id, 5 as rank
-                from entries e join translations t on t.entry_id = e.id
-                where t.text like ? {direction_filter}
-            )
-            select e.*, min(c.rank) as match_rank
-            from candidates c
-            join entries e on e.id = c.id
-            group by e.id
-            order by match_rank, length(e.headword), e.headword
-            limit ?
-        """
-        params: list[Any] = []
-        for value in (query, query, query, like, like, like):
-            params.append(value)
-            params.extend(direction_args)
+        query_language = _query_language_from_direction(direction)
+        language_filter = "and language = ?" if query_language else ""
+        params: list[Any] = [word]
+        if query_language:
+            params.append(query_language)
         params.append(max_rows)
 
         with closing(_connect(self.path)) as conn:
-            rows = conn.execute(sql, params).fetchall()
-            return [self._entry(conn, row) for row in rows]
+            entry_ids = [
+                row["entry_id"]
+                for row in conn.execute(
+                    f"""
+                    select distinct entry_id
+                    from entries
+                    where word = ? {language_filter}
+                    order by entry_id
+                    limit ?
+                    """,
+                    params,
+                )
+            ]
+            return [self._concept(conn, entry_id) for entry_id in entry_ids]
 
     def find_correction_entries(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
-        query = query.strip()
-        if not query:
-            return []
-        max_rows = _limit(limit, default=25, maximum=50)
-        fts_query = _fts_query(query)
-        like = f"%{query}%"
+        return self.lookup_word(query, direction="vro", limit=limit)
 
-        sql = """
-            with candidates as (
-                select e.id, 0 as rank
-                from entries e
-                where e.headword = ?
-                union
-                select e.id, 1 as rank
-                from entries e join forms f on f.entry_id = e.id
-                where f.form = ?
-                union
-                select e.id, 2 as rank
-                from entries e join translations t on t.entry_id = e.id
-                where t.text = ?
-                union
-                select e.id, 3 as rank
-                from entry_fts f join entries e on e.id = f.entry_id
-                where entry_fts match ?
-                union
-                select e.id, 4 as rank
-                from entries e
-                where e.headword like ?
-                union
-                select e.id, 5 as rank
-                from entries e join forms f on f.entry_id = e.id
-                where f.form like ?
-                union
-                select e.id, 6 as rank
-                from entries e join translations t on t.entry_id = e.id
-                where t.text like ?
-            )
-            select e.*, min(c.rank) as match_rank
-            from candidates c
-            join entries e on e.id = c.id
-            group by e.id
-            order by match_rank, length(e.headword), e.headword
-            limit ?
-        """
-        params = [query, query, query, fts_query, like, like, like, max_rows]
-        with closing(_connect(self.path)) as conn:
-            try:
-                rows = conn.execute(sql, params).fetchall()
-            except sqlite3.OperationalError:
-                fallback_sql = """
-                    with candidates as (
-                        select e.id, 0 as rank
-                        from entries e
-                        where e.headword = ?
-                        union
-                        select e.id, 1 as rank
-                        from entries e join forms f on f.entry_id = e.id
-                        where f.form = ?
-                        union
-                        select e.id, 2 as rank
-                        from entries e join translations t on t.entry_id = e.id
-                        where t.text = ?
-                        union
-                        select e.id, 4 as rank
-                        from entries e
-                        where e.headword like ?
-                        union
-                        select e.id, 5 as rank
-                        from entries e join forms f on f.entry_id = e.id
-                        where f.form like ?
-                        union
-                        select e.id, 6 as rank
-                        from entries e join translations t on t.entry_id = e.id
-                        where t.text like ?
-                    )
-                    select e.*, min(c.rank) as match_rank
-                    from candidates c
-                    join entries e on e.id = c.id
-                    group by e.id
-                    order by match_rank, length(e.headword), e.headword
-                    limit ?
-                """
-                rows = conn.execute(
-                    fallback_sql,
-                    [query, query, query, like, like, like, max_rows],
-                ).fetchall()
-            return [self._entry(conn, row) for row in rows]
+    @staticmethod
+    def _format_term(row: sqlite3.Row) -> str:
+        word = row["word"]
+        info = row["info"]
+        return f"{word} ({info})" if info else word
 
-    def _entry(self, conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
-        entry_id = row["id"]
-        raw = _json_loads(row["raw_json"])
-        translations = [
-            dict(item)
-            for item in conn.execute(
-                "select language, text from translations where entry_id = ? order by id",
-                (entry_id,),
-            )
-        ]
-        forms = [
-            dict(item)
-            for item in conn.execute(
-                "select language, form, form_type from forms where entry_id = ? order by id",
-                (entry_id,),
-            )
-        ]
-        examples = [
-            dict(item)
-            for item in conn.execute(
-                "select source_text, target_text from examples where entry_id = ? order by id",
-                (entry_id,),
-            )
-        ]
-        notes = [
-            item["text"]
-            for item in conn.execute(
-                "select text from notes where entry_id = ? order by id",
-                (entry_id,),
-            )
-        ]
-        return {
-            "id": entry_id,
-            "headword": row["headword"],
-            "direction": row["direction"],
-            "direction_description": _DIRECTION_DESCRIPTIONS.get(row["direction"]),
-            "source_lang": row["source_lang"],
-            "target_lang": row["target_lang"],
-            "translations": translations,
-            "forms": forms,
-            "examples": examples,
-            "notes": notes,
-            "source_url": row["source_url"],
-            "raw": {
-                "external_id": row["external_id"],
-                "letter": row["letter"],
-                "text": raw.get("text"),
-            },
-        }
+    def _concept(self, conn: sqlite3.Connection, entry_id: str) -> dict[str, list[str]]:
+        concept: dict[str, list[str]] = {}
+        rows = conn.execute(
+            """
+            select language, word, info
+            from entries
+            where entry_id = ?
+            order by language, word
+            """,
+            (entry_id,),
+        )
+        for row in rows:
+            concept.setdefault(row["language"], []).append(self._format_term(row))
+        return concept
 
 
 class WordBagStore:
@@ -291,7 +123,7 @@ class WordBagStore:
         with closing(_connect(self.path)) as conn:
             row = conn.execute(
                 """
-                select word, total_count, corpus_count, dictionary_count, puutri_count
+                select word, total_count
                 from words
                 where word = ?
                 """,
@@ -302,7 +134,7 @@ class WordBagStore:
                     "word": original,
                     "normalized_word": normalised,
                     "exists": False,
-                    "note": "Not found as a surface form in the current word bag.",
+                    "total_count": 0,
                 }
 
             result = {
@@ -310,13 +142,7 @@ class WordBagStore:
                 "normalized_word": normalised,
                 "exists": True,
                 "total_count": row["total_count"],
-                "corpus_count": row["corpus_count"],
-                "dictionary_count": row["dictionary_count"],
-                "puutri_count": row["puutri_count"],
-                "note": "Found as a surface form in the current word bag; this does not prove it is standard or contextually correct.",
             }
-            if include_sources:
-                result["sources"] = self._sources(conn, normalised)
             return result
 
     def exists_many(
@@ -341,7 +167,7 @@ class WordBagStore:
                 placeholders = ",".join("?" for _ in chunk)
                 for row in conn.execute(
                     f"""
-                    select word, total_count, corpus_count, dictionary_count, puutri_count
+                    select word, total_count
                     from words where word in ({placeholders})
                     """,
                     chunk,
@@ -358,7 +184,7 @@ class WordBagStore:
                         "word": original,
                         "normalized_word": norm,
                         "exists": False,
-                        "note": "Not found as a surface form in the current word bag.",
+                        "total_count": 0,
                     }
                     continue
                 entry = {
@@ -366,13 +192,7 @@ class WordBagStore:
                     "normalized_word": norm,
                     "exists": True,
                     "total_count": row["total_count"],
-                    "corpus_count": row["corpus_count"],
-                    "dictionary_count": row["dictionary_count"],
-                    "puutri_count": row["puutri_count"],
-                    "note": "Found as a surface form in the current word bag; this does not prove it is standard or contextually correct.",
                 }
-                if include_sources:
-                    entry["sources"] = self._sources(conn, norm)
                 results[original] = entry
         return results
 
@@ -381,10 +201,8 @@ class WordBagStore:
         tokens = _text_words(text)
         if not tokens:
             return {
-                "token_count": 0,
-                "unique_word_count": 0,
-                "unknown_count": 0,
-                "unknown_words": [],
+                "unknown": [],
+                "checked": 0,
             }
 
         counts: dict[str, int] = {}
@@ -395,22 +213,13 @@ class WordBagStore:
 
         known = self._known_words(counts.keys())
         unknown = [
-            {
-                "word": first_seen[word],
-                "normalized_word": word,
-                "count_in_text": counts[word],
-            }
+            first_seen[word]
             for word in sorted(counts, key=lambda item: (-counts[item], item))
             if word not in known
         ]
         return {
-            "token_count": len(tokens),
-            "unique_word_count": len(counts),
-            "known_unique_count": len(known),
-            "unknown_count": len(unknown),
-            "returned_unknown_count": min(len(unknown), max_rows),
-            "unknown_words": unknown[:max_rows],
-            "note": "Unknown means absent from the surface-form word bag, not necessarily wrong.",
+            "unknown": unknown[:max_rows],
+            "checked": len(tokens),
         }
 
     def _known_words(self, words: Any) -> set[str]:
@@ -428,20 +237,6 @@ class WordBagStore:
                 ).fetchall()
                 known.update(row["word"] for row in rows)
         return known
-
-    def _sources(self, conn: sqlite3.Connection, word: str) -> list[dict[str, Any]]:
-        rows = conn.execute(
-            """
-            select s.slug, s.name, s.source_group, ws.count
-            from word_sources ws
-            join sources s on s.id = ws.source_id
-            where ws.word = ?
-            order by ws.count desc, s.slug
-            """,
-            (word,),
-        ).fetchall()
-        return [dict(row) for row in rows]
-
 
 class CorpusStore:
     def __init__(self, path: Path):
@@ -479,18 +274,16 @@ class CorpusStore:
         params.append(limit)
         rows = conn.execute(
             f"""
-            select s.id, s.source_type, s.language, s.text, s.metadata_json,
-                   d.id as document_id, d.url as document_url
+            select s.text
             from segments_fts f
             join segments s on s.id = f.rowid
-            join documents d on d.id = s.document_id
             where segments_fts match ? {source_filter}
             order by bm25(segments_fts)
             limit ?
             """,
             params,
         ).fetchall()
-        return [self._usage(row) for row in rows]
+        return [self._snippet(row["text"], query) for row in rows]
 
     def _like_search(
         self,
@@ -506,17 +299,15 @@ class CorpusStore:
         params.append(limit)
         rows = conn.execute(
             f"""
-            select s.id, s.source_type, s.language, s.text, s.metadata_json,
-                   d.id as document_id, d.url as document_url
+            select s.text
             from segments s
-            join documents d on d.id = s.document_id
             where s.text like ? {source_filter}
             order by s.id
             limit ?
             """,
             params,
         ).fetchall()
-        return [self._usage(row) for row in rows]
+        return [self._snippet(row["text"], query) for row in rows]
 
     @staticmethod
     def _phrase_query(query: str) -> str:
@@ -526,20 +317,34 @@ class CorpusStore:
         return escaped
 
     @staticmethod
-    def _usage(row: sqlite3.Row) -> dict[str, Any]:
-        metadata = _json_loads(row["metadata_json"])
-        return {
-            "segment_id": row["id"],
-            "text": row["text"],
-            "language": row["language"],
-            "source_type": row["source_type"],
-            "source_description": _SOURCE_TYPE_DESCRIPTIONS.get(row["source_type"]),
-            "source": {
-                "document_id": row["document_id"],
-                "url": metadata.get("url") or row["document_url"],
-                "section": metadata.get("section"),
-                "published_time": metadata.get("published_time"),
-                "issue_date_native": metadata.get("issue_date_native"),
-                "raw_path": metadata.get("raw_path"),
-            },
-        }
+    @staticmethod
+    def _snippet(text: str, query: str, max_chars: int = 260) -> str:
+        normalized = " ".join(text.split())
+        if len(normalized) <= max_chars:
+            return normalized
+
+        folded = normalized.casefold()
+        needles = [query.casefold(), *_text_words(query)]
+        match_at = -1
+        match_len = 0
+        for needle in needles:
+            if not needle:
+                continue
+            match_at = folded.find(needle.casefold())
+            if match_at >= 0:
+                match_len = len(needle)
+                break
+
+        if match_at < 0:
+            return f"{normalized[:max_chars].rstrip()} ..."
+
+        before = 90
+        start = max(0, match_at - before)
+        end = min(len(normalized), start + max_chars)
+        start = max(0, end - max_chars)
+        snippet = normalized[start:end].strip()
+        if start:
+            snippet = f"... {snippet}"
+        if end < len(normalized):
+            snippet = f"{snippet} ..."
+        return snippet

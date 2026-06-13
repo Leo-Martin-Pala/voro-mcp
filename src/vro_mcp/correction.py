@@ -78,7 +78,7 @@ class CorrectionSuggester:
                     "dictionary",
                     10 + entry_rank,
                     float(entry_rank),
-                    {"entry_id": entry["id"], "headword": entry["headword"]},
+                    {"concept": entry},
                 )
 
         analyzed = self._analyze_candidates(candidates)
@@ -199,14 +199,7 @@ class CorrectionSuggester:
     @staticmethod
     def _vro_tokens_from_entry(entry: dict[str, Any]) -> list[str]:
         values: list[str] = []
-        for translation in entry.get("translations", []):
-            if translation.get("language") == "vro":
-                values.append(translation.get("text", ""))
-        for form in entry.get("forms", []):
-            if form.get("language") == "vro":
-                values.append(form.get("form", ""))
-        for example in entry.get("examples", []):
-            values.append(example.get("target_text", ""))
+        values.extend(entry.get("vro", []))
 
         tokens: list[str] = []
         for value in values:
@@ -218,15 +211,7 @@ class CorrectionSuggester:
 
     @staticmethod
     def _compact_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [
-            {
-                "id": entry["id"],
-                "headword": entry["headword"],
-                "translations": entry.get("translations", [])[:3],
-                "forms": entry.get("forms", [])[:5],
-            }
-            for entry in entries[:10]
-        ]
+        return entries[:10]
 
     @staticmethod
     def _add_candidate(

@@ -143,9 +143,9 @@ From least to most system-wide. Do the steps that apply, from the repo root.
 
 | Tool | What it does |
 | --- | --- |
-| `lookup_word` | Dictionary lookup (en↔vro). |
-| `find_usage_examples` | Full-text corpus search for real usage. |
-| `word_exists_in_bag` | Fast check whether a word form has been seen. |
+| `lookup_word` | Compact dictionary concept lookup (`en`/`et`/`vro` language lists). |
+| `find_usage_examples` | Full-text corpus search returning short text snippets. |
+| `word_exists_in_bag` | Fast word-bag count check; `0` means absent. |
 | `find_unknown_words` | List word forms in a text absent from the word bag. |
 | `find_unrecognized_words` | List text word forms that the GiellaLT analyzer returns as `+?`, with optional word-bag prefiltering. |
 | `analyze_word` | GiellaLT morphological analysis. |
@@ -158,9 +158,12 @@ From least to most system-wide. Do the steps that apply, from the repo root.
 | `translate_vro` | Neurotõlge/TartuNLP translation. |
 | `check_setup` | Report database and external Giella tool availability. |
 
-Most lookup tools accept a single word or a list for batched queries.
+Most lookup tools accept a single word or a list for batched queries. Successful
+tool outputs are intentionally compact so MCP clients spend less context on
+internal IDs, debug metadata, and provenance fields.
 
-The open dictionary currently covers English↔Võro only.
+The open dictionary currently contains IDS concepts with English, Estonian, and
+Võro terms where available.
 
 ## Resources
 
