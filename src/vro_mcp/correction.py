@@ -50,14 +50,11 @@ class CorrectionSuggester:
                     "analyses": original_analysis["results"][original]["lines"],
                 },
                 "candidates": [],
-                "evidence": {"analyzer": original_analysis},
             }
 
         candidates: dict[str, Candidate] = {}
-        evidence: dict[str, Any] = {"analyzer": original_analysis}
 
         spelling = self.giella.spellcheck_vro(original)
-        evidence["speller"] = spelling
         for rank, item in enumerate(self._parse_speller_suggestions(spelling), start=1):
             self._add_candidate(
                 candidates,
@@ -69,7 +66,6 @@ class CorrectionSuggester:
             )
 
         dictionary_entries = self.dictionary.find_correction_entries(original, limit=40)
-        evidence["dictionary_entries"] = self._compact_entries(dictionary_entries)
         for entry_rank, entry in enumerate(dictionary_entries, start=1):
             for token in self._vro_tokens_from_entry(entry):
                 self._add_candidate(
@@ -103,7 +99,6 @@ class CorrectionSuggester:
             "status": "suggested" if best else "no_confirmed_candidate",
             "best": best,
             "candidates": [self._candidate_payload(candidate) for candidate in confirmed[:10]],
-            "evidence": evidence,
         }
 
     def _generate_inflection_candidates(
@@ -246,7 +241,6 @@ class CorrectionSuggester:
             "source": source,
             "confidence": "confirmed",
             "analyses": candidate.analyses,
-            "details": candidate.details,
         }
 
     @staticmethod

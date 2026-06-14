@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,17 @@ _DIRECTION_PAIRS = {
     "vro-en": ("vro", "en"),
     "vro-et": ("vro", "et"),
 }
+
+COMMON_TERM_MATCH_THRESHOLD = 5000
+_APOSTROPHE_VARIANTS = str.maketrans({
+    "´": "'",
+    "ʼ": "'",
+    "’": "'",
+    "‘": "'",
+    "`": "'",
+})
+_COMBINING_ACUTE = "\u0301"
+_PALATALIZABLE = set("bcdfghjklmnpqrstvwxzBCDFGHJKLMNPQRSTVWXZ")
 
 
 def _connect(path: Path) -> sqlite3.Connection:
@@ -62,8 +74,20 @@ def _available_directions(languages: set[str]) -> list[str]:
     ]
 
 
+def normalize_db_text(value: str) -> str:
+    """Normalize text the same way the SQLite lookup keys are stored."""
+    text = unicodedata.normalize("NFD", value.strip().translate(_APOSTROPHE_VARIANTS))
+    parts: list[str] = []
+    for char in text:
+        if char == _COMBINING_ACUTE and parts and parts[-1] in _PALATALIZABLE:
+            parts.append("'")
+            continue
+        parts.append(char)
+    return unicodedata.normalize("NFC", "".join(parts)).lower()
+
+
 def _normalise_word(value: str) -> str:
-    return value.strip().lower()
+    return normalize_db_text(value)
 
 
 def _text_words(text: str) -> list[str]:
@@ -100,19 +124,14 @@ class DictionaryStore:
         params.append(max_rows)
 
         with closing(_connect(self.path)) as conn:
-            entry_ids = [
-                row["entry_id"]
-                for row in conn.execute(
-                    f"""
-                    select distinct entry_id
-                    from entries
-                    where word = ? {language_filter} {target_filter}
-                    order by entry_id
-                    limit ?
-                    """,
-                    params,
-                )
-            ]
+            entry_ids = self._matching_entry_ids(
+                conn,
+                word,
+                max_rows,
+                language_filter,
+                target_filter,
+                params,
+            )
             return [
                 self._concept(conn, entry_id, canonical_direction)
                 for entry_id in entry_ids
@@ -120,6 +139,47 @@ class DictionaryStore:
 
     def find_correction_entries(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
         return self.lookup_word(query, direction="vro", limit=limit)
+
+    @staticmethod
+    def _matching_entry_ids(
+        conn: sqlite3.Connection,
+        word: str,
+        max_rows: int,
+        language_filter: str,
+        target_filter: str,
+        exact_params: list[Any],
+    ) -> list[str]:
+        entry_ids = [
+            row["entry_id"]
+            for row in conn.execute(
+                f"""
+                select distinct entry_id
+                from entries
+                where word = ? {language_filter} {target_filter}
+                order by entry_id
+                limit ?
+                """,
+                exact_params,
+            )
+        ]
+        if entry_ids:
+            return entry_ids
+
+        substring_params = list(exact_params)
+        substring_params[0] = f"%{word}%"
+        return [
+            row["entry_id"]
+            for row in conn.execute(
+                f"""
+                select distinct entry_id
+                from entries
+                where word like ? {language_filter} {target_filter}
+                order by length(word), entry_id
+                limit ?
+                """,
+                substring_params,
+            )
+        ]
 
     @staticmethod
     def _format_term(row: sqlite3.Row) -> str:
@@ -160,7 +220,7 @@ class WordBagStore:
     def __init__(self, path: Path):
         self.path = path
 
-    def word_exists_in_bag(self, word: str, include_sources: bool = True) -> dict[str, Any]:
+    def word_exists_in_bag(self, word: str) -> dict[str, Any]:
         original = word.strip()
         normalised = _normalise_word(original)
         if not normalised:
@@ -194,7 +254,6 @@ class WordBagStore:
     def exists_many(
         self,
         words: list[str],
-        include_sources: bool = True,
     ) -> dict[str, dict[str, Any]]:
         """Batched word_exists_in_bag. Returns a map keyed by the ORIGINAL input
         string. Existence is checked with a single IN query per 500-word chunk."""
@@ -314,17 +373,32 @@ class CorpusStore:
     ) -> list[dict[str, Any]]:
         fts_query = self._phrase_query(query)
         source_filter = "and s.source_type = ?" if source_type else ""
-        params: list[Any] = [fts_query]
+        count_params: list[Any] = [fts_query]
         if source_type:
-            params.append(source_type)
-        params.append(limit)
+            count_params.append(source_type)
+        match_count = conn.execute(
+            f"""
+            select count(*) as total
+            from segments_fts f
+            join segments s on s.id = f.rowid
+            where segments_fts match ? {source_filter}
+            """,
+            count_params,
+        ).fetchone()["total"]
+
+        params = [*count_params, limit]
+        order_clause = (
+            ""
+            if match_count > COMMON_TERM_MATCH_THRESHOLD
+            else "order by bm25(segments_fts)"
+        )
         rows = conn.execute(
             f"""
             select s.text
             from segments_fts f
             join segments s on s.id = f.rowid
             where segments_fts match ? {source_filter}
-            order by bm25(segments_fts)
+            {order_clause}
             limit ?
             """,
             params,
@@ -362,7 +436,6 @@ class CorpusStore:
             return f'"{escaped}"'
         return escaped
 
-    @staticmethod
     @staticmethod
     def _snippet(text: str, query: str, max_chars: int = 260) -> str:
         normalized = " ".join(text.split())

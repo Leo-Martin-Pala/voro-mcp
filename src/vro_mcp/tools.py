@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from typing import Any
 
 from .config import Settings
 from .correction import CorrectionSuggester
-from .db import CorpusStore, DictionaryStore, WordBagStore, _text_words
+from .db import CorpusStore, DictionaryStore, WordBagStore, normalize_db_text
 from .estonian_leakage import EstonianLeakageLinter
 from .giella import GiellaAdapter
 from .neurotolge import NeurotolgeClient
+from .tokenization import tokenize
 
 # Per-tool input caps. The dictionary/corpus tools return heavy payloads, so
 # they are capped low; the word-bag and analyzer tools return tiny per-item
@@ -19,6 +21,7 @@ EXISTS_CAP = 100
 ANALYZE_CAP = 100
 LEAKAGE_CAP = 100
 UNRECOGNIZED_LIMIT = 500
+_SPELL_SUGGESTION_RE = re.compile(r"^(?P<form>.+?)\s+(?P<score>-?\d+(?:\.\d+)?)$")
 
 
 def _prepare_batch(value: str | list[str] | None, cap: int) -> tuple[list[str], int]:
@@ -57,6 +60,36 @@ def _output_limit(limit: int | None, default: int = 50, maximum: int = UNRECOGNI
     if limit is None:
         return default
     return max(1, min(int(limit), maximum))
+
+
+def _compact_score(value: str) -> int | float:
+    score = round(float(value), 2)
+    return int(score) if score.is_integer() else score
+
+
+def _parse_spellcheck_lines(lines: list[str]) -> list[dict[str, Any]]:
+    unknown: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith('"') and " is NOT in the lexicon" in stripped:
+            word = stripped.split('"', 2)[1]
+            current = {"word": word, "suggestions": []}
+            unknown.append(current)
+            continue
+        if current is None or stripped.startswith("Corrections for "):
+            continue
+        match = _SPELL_SUGGESTION_RE.match(stripped)
+        if match:
+            current["suggestions"].append(
+                {
+                    "form": match.group("form"),
+                    "score": _compact_score(match.group("score")),
+                }
+            )
+    return unknown
 
 
 class VroTools:
@@ -118,11 +151,10 @@ class VroTools:
     def word_exists_in_bag(
         self,
         words: str | list[str],
-        include_sources: bool = True,
     ) -> dict[str, Any]:
         items, dropped = _prepare_batch(words, EXISTS_CAP)
         try:
-            rows = self.word_bag.exists_many(items, include_sources=include_sources)
+            rows = self.word_bag.exists_many(items)
         except sqlite3.Error as exc:
             return self._db_unavailable("word_bag", self.settings.word_bag_db, exc)
         out: dict[str, Any] = {
@@ -146,12 +178,15 @@ class VroTools:
         limit: int = 50,
     ) -> dict[str, Any]:
         max_rows = _output_limit(limit)
-        tokens = _text_words(text)
+        tokens = tokenize(text)
         counts: dict[str, int] = {}
         first_seen: dict[str, str] = {}
         for token in tokens:
-            counts[token] = counts.get(token, 0) + 1
-            first_seen.setdefault(token, token)
+            normalised = normalize_db_text(token)
+            if not normalised:
+                continue
+            counts[normalised] = counts.get(normalised, 0) + 1
+            first_seen.setdefault(normalised, token)
 
         known: set[str] = set()
         if prefilter and counts:
@@ -160,19 +195,20 @@ class VroTools:
             except sqlite3.Error as exc:
                 return self._db_unavailable("word_bag", self.settings.word_bag_db, exc)
 
-        candidates = [
-            word
-            for word in sorted(counts, key=lambda item: (-counts[item], item))
-            if word not in known
+        candidate_keys = [
+            key
+            for key in sorted(counts, key=lambda item: (-counts[item], item))
+            if key not in known
         ]
-        if not candidates:
+        if not candidate_keys:
             return {"unrecognized": [], "checked": 0, "prefiltered": prefilter}
 
-        analysis = self.giella.analyze_words(candidates)
+        candidate_surfaces = [first_seen[key] for key in candidate_keys]
+        analysis = self.giella.analyze_words(candidate_surfaces)
         if not analysis.get("available"):
             analysis.update(
                 {
-                    "checked": len(candidates),
+                    "checked": len(candidate_surfaces),
                     "unrecognized": [],
                     "prefiltered": prefilter,
                 }
@@ -181,13 +217,13 @@ class VroTools:
 
         results = analysis.get("results", {})
         unrecognized = [
-            first_seen[word]
-            for word in candidates
-            if not results.get(word, {}).get("recognized", False)
+            surface
+            for surface in candidate_surfaces
+            if not results.get(surface, {}).get("recognized", False)
         ]
         return {
             "unrecognized": unrecognized[:max_rows],
-            "checked": len(candidates),
+            "checked": len(candidate_surfaces),
             "prefiltered": prefilter,
         }
 
@@ -231,23 +267,24 @@ class VroTools:
         self,
         lemma: str,
         tags: str | None = None,
-        part_of_speech: str | None = None,
     ) -> dict[str, Any]:
-        result = self.giella.generate_forms(lemma, tags=tags, part_of_speech=part_of_speech)
+        result = self.giella.generate_forms(lemma, tags=tags)
         if not result.get("available"):
             return result
         forms = []
         for line in result.get("lines", []):
             parts = line.split("\t")
-            if len(parts) >= 2 and parts[1].strip():
+            if len(parts) >= 3 and parts[2].strip() != "0":
+                continue
+            if len(parts) >= 2 and parts[1].strip() and not parts[1].strip().endswith("+?"):
                 forms.append(parts[1].strip())
         return {"forms": forms}
 
-    def spellcheck_vro(self, text: str) -> dict[str, Any]:
+    def spellcheck_vro(self, text: str) -> dict[str, Any] | list[dict[str, Any]]:
         result = self.giella.spellcheck_vro(text)
         if not result.get("available"):
             return result
-        return {"lines": result.get("lines", [])}
+        return _parse_spellcheck_lines(result.get("lines", []))
 
     def grammar_check_vro(self, text: str) -> dict[str, Any]:
         result = self.giella.grammar_check_vro(text)

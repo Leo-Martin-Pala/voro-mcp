@@ -57,28 +57,22 @@ class EstonianLeakageLinter:
     def __init__(self) -> None:
         self.ruleset = load_leakage_rules()
 
-    def lint_words(self, words: str | list[str]) -> dict[str, Any]:
+    def lint_words(self, words: str | list[str]) -> dict[str, list[dict[str, Any]]]:
         """In-depth leakage check for discrete words or short phrases.
 
         Inputs are treated as whole units (one word/phrase each); no tokenization
         happens here, mirroring ``word_exists_in_bag`` / ``analyze_word``. Use
         ``find_in_text`` to locate suspects in a larger passage, then pass them
-        here for rule IDs, severities, messages, and hints.
+        here for severities, messages, and hints.
         """
         inputs = [words] if isinstance(words, str) else list(words)
         cleaned = [str(item).strip() for item in inputs if str(item).strip()]
         results = {original: self._lint_unit(original) for original in cleaned}
-        return {
-            "ruleset_id": self.ruleset["ruleset_id"],
-            "purpose": self.ruleset["purpose"],
-            "checked": len(cleaned),
-            "results": results,
-        }
+        return results
 
     def find_in_text(self, text: str, limit: int = 200) -> dict[str, Any]:
         """Slim leakage scan over a larger text: deduped flagged surface forms
-        plus phrase-level (window) hits, without per-rule detail. The model can
-        re-check any item via ``lint_words`` for the full explanation.
+        without phrase-level (window) hits or per-rule detail.
         """
         tokens = tokenize(text)
         counts: dict[str, int] = {}
@@ -95,31 +89,14 @@ class EstonianLeakageLinter:
         ordered = sorted(flagged, key=lambda norm: (-counts[norm], norm))
         flagged_words = [first_seen[norm] for norm in ordered]
 
-        phrases: list[str] = []
-        seen_phrases: set[str] = set()
-        for match in self._lint_window(text):
-            key = _normalize(match["text"])
-            if key not in seen_phrases:
-                seen_phrases.add(key)
-                phrases.append(match["text"])
-
         return {
-            "ruleset_id": self.ruleset["ruleset_id"],
-            "purpose": self.ruleset["purpose"],
             "token_count": len(tokens),
             "unique_word_count": len(counts),
             "flagged_count": len(flagged_words),
-            "returned_flagged_count": min(len(flagged_words), limit),
             "flagged_words": flagged_words[:limit],
-            "flagged_phrases": phrases[:limit],
-            "note": (
-                "Slim triage: surface forms with an Estonian-looking ending, plus "
-                "phrase-level hits. Pass any of these to lint_estonian_leakage for "
-                "rule IDs, severities, messages, and hints."
-            ),
         }
 
-    def _lint_unit(self, unit: str) -> dict[str, Any]:
+    def _lint_unit(self, unit: str) -> list[dict[str, Any]]:
         normalized = _normalize(unit)
         matches: list[dict[str, Any]] = []
         for rule in self.ruleset["rules"]:
@@ -127,22 +104,17 @@ class EstonianLeakageLinter:
                 continue
             if rule.scope == "token":
                 if rule.regex.fullmatch(unit):
-                    matches.append(self._match_payload(rule, unit))
+                    matches.append(self._match_payload(rule))
             else:
                 for match in rule.regex.finditer(unit):
                     matches.append(
                         {
-                            **self._match_payload(rule, match.group(0)),
+                            **self._match_payload(rule),
                             "span": [match.start(), match.end()],
                         }
                     )
         matches = self._keep_highest_severity(matches)
-        return {
-            "normalized_token": normalized,
-            "flagged": bool(matches),
-            "highest_severity": self._highest_severity(matches),
-            "matches": matches,
-        }
+        return matches
 
     def _token_is_flagged(self, token: str, normalized: str) -> bool:
         return any(
@@ -152,25 +124,9 @@ class EstonianLeakageLinter:
             for rule in self.ruleset["rules"]
         )
 
-    def _lint_window(self, text: str) -> list[dict[str, Any]]:
-        matches: list[dict[str, Any]] = []
-        for rule in self.ruleset["rules"]:
-            if rule.scope != "window":
-                continue
-            for match in rule.regex.finditer(text):
-                matches.append(
-                    {
-                        **self._match_payload(rule, match.group(0)),
-                        "span": [match.start(), match.end()],
-                    }
-                )
-        return matches
-
     @staticmethod
-    def _match_payload(rule: LeakageRule, text: str) -> dict[str, Any]:
+    def _match_payload(rule: LeakageRule) -> dict[str, Any]:
         return {
-            "text": text,
-            "rule_id": rule.id,
             "severity": rule.severity,
             "message": rule.message,
             "hint": rule.hint,

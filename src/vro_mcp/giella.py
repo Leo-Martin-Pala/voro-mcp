@@ -112,9 +112,8 @@ class GiellaAdapter:
         self,
         lemma: str,
         tags: str | None = None,
-        part_of_speech: str | None = None,
-    ) -> dict[str, Any]:
-        suffix = tags if tags is not None else part_of_speech
+     ) -> dict[str, Any]:
+        suffix = tags.strip() if tags else None
         text = lemma.strip() if suffix is None else f"{lemma.strip()}\t{suffix.strip()}"
         return self._run_text_tool("generator", text)
 

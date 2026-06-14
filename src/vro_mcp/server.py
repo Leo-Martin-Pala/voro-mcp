@@ -107,6 +107,8 @@ def create_server() -> Any:
         et, and vro. Direction accepts the standard values en-vro, et-vro,
         vro-en, and vro-et; directed results include a direction field and only
         that source/target language pair. Leave direction unset when unsure.
+        Exact normalized matches are preferred; if none exist, lookup also
+        searches inside stored comma-separated terms such as "church, temple".
         """
         return tools.lookup_word(query, direction=direction, limit=limit)
 
@@ -125,14 +127,14 @@ def create_server() -> Any:
         return tools.find_usage_examples(query, source_type=source_type, limit=limit)
 
     @mcp.tool()
-    def word_exists_in_bag(words: str | list[str], include_sources: bool = True) -> dict[str, Any]:
+    def word_exists_in_bag(words: str | list[str]) -> dict[str, Any]:
         """
         Check whether word surface forms exist in the Võro word bag. Pass a
         single string, or a list of up to 100 words. Output is keyed by input
         word; the integer value is the stored count, with 0 meaning absent.
         Existence does not prove the form is standard or correct in context.
         """
-        return tools.word_exists_in_bag(words, include_sources=include_sources)
+        return tools.word_exists_in_bag(words)
 
     @mcp.tool()
     def find_unknown_words(text: str, limit: int = 50) -> dict[str, Any]:
@@ -171,16 +173,16 @@ def create_server() -> Any:
         return tools.analyze_word(words)
 
     @mcp.tool()
-    def lint_estonian_leakage(words: str | list[str]) -> dict[str, Any]:
+    def lint_estonian_leakage(words: str | list[str]) -> dict[str, list[dict[str, Any]]]:
         """
         In-depth Standard Estonian leakage linter for discrete Võro words. Pass a
         single word/short phrase, or a list of up to 100 inputs; each input is
         checked as a whole unit with no tokenization (mirrors word_exists_in_bag
         and analyze_word). For a larger passage, scan it with find_estonian_leakage
-        first, then pass the flagged words/phrases here. It flags Estonian-looking
+        first, then pass the flagged words here. It flags Estonian-looking
         inflectional endings such as -nud, -tud/-dud, -b, -vad, -sse, and -sid,
-        returning rule IDs, severities, messages, and hints. Findings mean "this
-        ending is Estonian-looking", not proof that the whole word is Estonian.
+        returning severities, messages, and hints. Findings mean "this ending
+        looks Estonian-looking", not proof that the whole word is Estonian.
         """
         return tools.lint_estonian_leakage(words)
 
@@ -189,10 +191,9 @@ def create_server() -> Any:
         """
         Tokenize a larger intended-Võro text and return a slim list of surface
         word forms whose ending looks like Standard Estonian (e.g. -nud, -tud/-dud,
-        -b, -vad, -sse, -sid), plus any phrase-level hits such as "ei tehtud" past
-        negation. Output is deduplicated and frequency-sorted, with no per-rule
-        detail, so it stays small for long text. Pass any flagged word or phrase to
-        lint_estonian_leakage for rule IDs, severities, messages, and hints.
+        -b, -vad, -sse, -sid). Output is deduplicated and frequency-sorted, with no
+        per-rule detail, so it stays small for long text. Pass any flagged word to
+        lint_estonian_leakage for severities, messages, and hints.
         Flagged means "ending looks Estonian", not proof the word is wrong.
         """
         return tools.find_estonian_leakage(text, limit=limit)
@@ -211,16 +212,22 @@ def create_server() -> Any:
     def generate_forms(
         lemma: str,
         tags: str | None = None,
-        part_of_speech: str | None = None,
     ) -> dict[str, Any]:
-        """Generate compact form list for one exact Giella analysis, e.g. lemma=uma and tags=A+Sg+Ill. This is not a full paradigm generator."""
-        return tools.generate_forms(lemma, tags=tags, part_of_speech=part_of_speech)
+        """
+        Generate compact form list for one exact Giella analysis, e.g. lemma=uma
+        and tags=A+Sg+Ill. Provide the complete tag string including the Part of
+        Speech prefix, e.g. tags="N+Sg+Ine"; failed +? generator lines are omitted.
+        This is not a full paradigm generator.
+        """
+        return tools.generate_forms(lemma, tags=tags)
 
     @mcp.tool()
-    def spellcheck_vro(text: str) -> dict[str, Any]:
+    def spellcheck_vro(text: str) -> dict[str, Any] | list[dict[str, Any]]:
         """
         Token-level Võro spellcheck with GiellaLT/Divvun. Checks each word form
-        against the speller lexicon and returns unknown words plus suggestions.
+        against the speller lexicon and returns a list of unknown words plus
+        compact suggestions with numeric scores. Note that for scores, a lower
+        value is better (lower weight/cost means higher confidence/nearer match).
         It does not judge sentence grammar; suggestions are capped to keep MCP
         output compact and may be incomplete or wrong.
         """
@@ -241,7 +248,9 @@ def create_server() -> Any:
         Translate text to or from Võro with Neurotõlge/TartuNLP. Use 3-letter
         API language codes. From Võro supports target_lang eng, est, fin, rus,
         hun, lav, nor. To Võro supports source_lang eng, est, fin, rus, lav,
-        hun, nor. Successful output omits raw API payloads.
+        hun, nor. If both source_lang and target_lang are omitted, it defaults
+        to translating from vro to est without giving an error. Successful
+        output omits raw API payloads and source/target languages.
         """
         return tools.translate_vro(text, source_lang=source_lang, target_lang=target_lang)
 

@@ -143,17 +143,17 @@ From least to most system-wide. Do the steps that apply, from the repo root.
 
 | Tool | What it does |
 | --- | --- |
-| `lookup_word` | Compact dictionary concept lookup (`en`/`et`/`vro` language lists). |
+| `lookup_word` | Compact dictionary concept lookup (`en`/`et`/`vro` language lists), with exact lookup before term substring fallback. |
 | `find_usage_examples` | Full-text corpus search returning short text snippets. |
 | `word_exists_in_bag` | Fast word-bag count check; `0` means absent. |
 | `find_unknown_words` | List word forms in a text absent from the word bag. |
 | `find_unrecognized_words` | List text word forms that the GiellaLT analyzer returns as `+?`, with optional word-bag prefiltering. |
 | `analyze_word` | GiellaLT morphological analysis. |
 | `generate_forms` | GiellaLT generation for one exact lemma + tag analysis. |
-| `spellcheck_vro` | Token-level spellcheck with suggestions. |
+| `spellcheck_vro` | Token-level spellcheck returning structured unknown words and scored suggestions. |
 | `grammar_check_vro` | Sentence-level grammar check. |
-| `find_estonian_leakage` | Scan a larger text and return a slim, deduped list of word forms (and phrases) with Estonian-looking endings. |
-| `lint_estonian_leakage` | In-depth check of specific words/phrases: rule IDs, severities, messages, and hints. |
+| `find_estonian_leakage` | Scan a larger text and return a slim, deduped list of word forms with Estonian-looking endings. |
+| `lint_estonian_leakage` | In-depth check of specific words/phrases: severities, messages, and hints. |
 | `suggest_correction` | Analyzer-verified fixes for a bad/unknown form. |
 | `translate_vro` | Neurotõlge/TartuNLP translation. |
 | `check_setup` | Report database and external Giella tool availability. |
@@ -165,7 +165,9 @@ internal IDs, debug metadata, and provenance fields.
 The open dictionary currently contains IDS concepts with English, Estonian, and
 Võro terms where available. `lookup_word` accepts standard direction values
 `en-vro`, `et-vro`, `vro-en`, and `vro-et`; directed results include the
-requested `direction`.
+requested `direction`. Exact normalized matches are preferred; when no exact
+entry exists, lookup can also match inside stored terms such as comma-separated
+English glosses.
 
 ## Resources
 
